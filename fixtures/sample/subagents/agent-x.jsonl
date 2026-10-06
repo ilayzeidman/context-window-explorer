@@ -1,0 +1,4 @@
+{"type": "attachment", "uuid": "x1", "parentUuid": null, "isSidechain": true, "attachment": {"type": "instructions", "files": [{"path": "MEMORY.md", "type": "AutoMem"}, {"path": "CLAUDE.md", "type": "Project"}]}, "rendered": [{"content": "rules"}]}
+{"type": "attachment", "uuid": "x2", "parentUuid": "x1", "isSidechain": true, "attachment": {"type": "date"}, "rendered": [{"content": "today"}]}
+{"type": "user", "uuid": "x3", "parentUuid": "x2", "isSidechain": true, "message": {"role": "user", "content": "Count the files."}}
+{"type": "assistant", "uuid": "x4", "parentUuid": "x3", "isSidechain": true, "message": {"role": "assistant", "content": [{"type": "text", "text": "Agent finished: 3 files."}], "usage": {"input_tokens": 10, "cache_read_input_tokens": 100, "cache_creation_input_tokens": 5, "output_tokens": 7}}}

@@ -1,0 +1,1038 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Context window explorer</title>
+<link rel="icon" href="data:,">
+<style>
+:root {
+  --page: #F2F2EE; --card: #FBFBF9; --line: #E3E3DE; --soft: #EBEBE6; --ink: #17181A; --mute: #5E6166; --faint: #8A8F98;
+  --disk: #DADBD6; --win: #0072B2; --sel: #D55E00; --mark: #2B2D31;
+  --sans: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --pad: 32px; --hero: 48px; --barh: 56px; --num: 40px; --title: 26px; --cbody: 20px; --body: 18px; --row: 16px; --small: 14px;
+}
+@media (max-width: 1500px) {
+  :root { --pad: 18px; --hero: 36px; --barh: 44px; --num: 32px; --title: 22px; --cbody: 17px; --body: 16px; --row: 15px; --small: 13px; }
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; height: 100%; background: var(--page); color: var(--ink); font: var(--body)/1.4 var(--sans); }
+body { font-variant-numeric: tabular-nums; }
+button { font: inherit; color: inherit; cursor: pointer; }
+:focus-visible { outline: 2px solid var(--win); outline-offset: 2px; }
+.shell { max-width: 1760px; height: 100vh; min-height: 560px; margin: 0 auto; padding: calc(var(--pad) * .6) var(--pad) var(--pad); display: flex; flex-direction: column; gap: 10px; }
+
+/* top bar */
+.top { display: flex; align-items: center; gap: 16px; min-height: 56px; position: relative; }
+.who { min-width: 0; flex: 1; }
+.crumbs { font-size: var(--small); color: var(--mute); }
+.crumbs button { border: 0; background: none; padding: 0; color: var(--win); text-decoration: underline; }
+.tline { display: flex; align-items: baseline; gap: 14px; min-width: 0; }
+#title { border: 0; background: none; padding: 2px 6px; margin-left: -6px; border-radius: 8px; font-size: 24px; font-weight: 600; white-space: nowrap; }
+#title:hover, #title[aria-expanded=true] { background: var(--soft); }
+#title small { font-size: 15px; color: var(--mute); margin-left: 4px; }
+#sub { color: var(--mute); font-size: var(--small); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tools { display: flex; gap: 8px; align-items: center; flex: none; }
+.btn { padding: 6px 13px; border: 1px solid var(--line); background: #fff; border-radius: 8px; font-size: var(--small); white-space: nowrap; }
+.btn:hover { border-color: #C3C4BE; }
+.btn[aria-pressed=true] { background: var(--ink); border-color: var(--ink); color: #fff; }
+.btn kbd { font: inherit; color: var(--faint); margin-left: 4px; }
+.btn[aria-pressed=true] kbd { color: #B9BBBF; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; background: #fff; padding: 2px; }
+.seg button { border: 0; background: none; padding: 4px 12px; border-radius: 6px; font-size: var(--small); color: var(--mute); }
+.seg button[aria-selected=true] { background: var(--ink); color: #fff; }
+#live .d { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--faint); margin-right: 6px; }
+#live[aria-pressed=true] { background: #fff; color: var(--ink); border-color: #009E73; }
+#live[aria-pressed=true] .d { background: #009E73; }
+
+/* picker */
+.picker { position: absolute; top: 54px; left: 0; z-index: 9; width: min(760px, 100%); background: #fff; border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 12px 32px rgba(23,24,26,.14); padding: 12px; }
+.picker.inline { position: static; box-shadow: none; width: min(900px, 100%); margin: 18px auto 0; text-align: left; }
+.pq { display: flex; gap: 8px; }
+.pq input { flex: 1; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; font: inherit; font-size: 16px; }
+#results { max-height: 56vh; overflow: auto; margin-top: 8px; }
+.picker.inline #results { max-height: none; }
+.res { display: grid; grid-template-columns: 1fr auto; gap: 2px 14px; padding: 9px 10px; border-radius: 8px; cursor: pointer; font-size: 16px; }
+.res:hover, .res:focus { background: var(--soft); }
+.res .t { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.res .s, .res .m { font-size: 13px; color: var(--mute); }
+.res .m { grid-column: 1 / -1; }
+
+/* hero + bar */
+.hero { display: flex; align-items: center; gap: 14px; font-size: calc(var(--hero) * .5); color: var(--mute); line-height: 1; }
+.hero b { font-size: var(--hero); font-weight: 600; color: var(--ink); letter-spacing: -.02em; }
+.badge { display: inline-block; font-size: 13px; line-height: 1; padding: 4px 8px; border-radius: 6px; border: 1px solid #C3C4BE; color: var(--mute); vertical-align: middle; cursor: help; font-weight: 400; letter-spacing: 0; }
+.badge.api { border-color: var(--ink); color: var(--ink); }
+.stack { display: flex; height: var(--barh); background: #E4E4DF; border-radius: 10px; overflow: hidden; }
+.stack i { display: flex; align-items: center; height: 100%; flex: none; border-right: 2px solid #fff; overflow: hidden; font: 600 14px/1 var(--sans); font-style: normal; }
+.stack i:last-child { border-radius: 0 8px 8px 0; }
+.stack i span { padding: 0 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hatch { background-image: repeating-linear-gradient(135deg, rgba(255,255,255,.22) 0 3px, transparent 3px 8px); }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 20px; font-size: var(--small); color: var(--mute); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend b { font-weight: 600; color: var(--ink); }
+.sw { width: 11px; height: 11px; border-radius: 3px; display: inline-block; flex: none; }
+
+/* stepper */
+.steps { display: flex; gap: 6px; flex-wrap: nowrap; overflow: hidden; }
+.step { display: inline-flex; align-items: center; gap: 8px; border: 1px solid #C3C4BE; background: #fff; border-radius: 999px; padding: 4px 14px 4px 5px; font-size: var(--small); white-space: nowrap; }
+.step .n { width: 24px; height: 24px; border-radius: 50%; background: var(--mark); color: #fff; font-weight: 600; font-size: 13px; display: inline-flex; align-items: center; justify-content: center; }
+.step.no { background: none; border-color: var(--line); color: var(--faint); }
+.step.no .n { background: none; border: 1.5px solid var(--disk); color: var(--faint); }
+.step.on { background: var(--ink); border-color: var(--ink); color: #fff; }
+.step.on .n { background: #fff; color: var(--ink); }
+
+/* book strip */
+.book { position: relative; }
+.bhead { display: flex; justify-content: space-between; font-size: 13px; color: var(--mute); margin: 4px 0 2px; }
+.bhead span { display: inline-flex; align-items: center; gap: 6px; }
+.bwrap { position: relative; height: 86px; }
+#strip { position: absolute; left: 0; top: 28px; width: 100%; height: 40px; border-radius: 4px; cursor: pointer; }
+#marks { position: absolute; inset: 0; width: 100%; height: 86px; overflow: visible; pointer-events: none; }
+#marks g[data-k] { pointer-events: all; cursor: pointer; }
+#marks .mk { fill: var(--mark); }
+#marks .ring { fill: none; stroke: var(--mark); stroke-width: 1.5; }
+#marks g.on .mk { fill: var(--sel); }
+#marks g.on .ring, #marks .halo { stroke: var(--sel); }
+#marks .halo { fill: none; stroke-width: 2; opacity: 0; }
+#marks g.on .halo { opacity: 1; }
+#marks text { font: 600 12px var(--sans); fill: #fff; pointer-events: none; }
+#marks text.gl { fill: var(--mute); font-weight: 400; font-size: 13px; }
+input[type=range] { width: 100%; margin: 2px 0 0; -webkit-appearance: none; appearance: none; height: 18px; background: transparent; }
+input[type=range]::-webkit-slider-runnable-track { height: 4px; background: var(--line); border-radius: 2px; }
+input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; margin-top: -6px; border-radius: 50%; background: var(--ink); border: 3px solid var(--page); box-shadow: 0 0 0 1px var(--ink); }
+input[type=range]::-moz-range-track { height: 4px; background: var(--line); border-radius: 2px; }
+input[type=range]::-moz-range-thumb { width: 12px; height: 12px; border-radius: 50%; background: var(--ink); border: 3px solid var(--page); }
+.pos { display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: var(--mute); gap: 10px; min-height: 22px; }
+.pill { border: 0; background: var(--ink); color: #fff; border-radius: 999px; padding: 2px 12px; font-size: 13px; }
+.hint { border: 0; background: none; color: var(--faint); font-size: 13px; padding: 0; }
+
+/* main area */
+.mainv { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.cols { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 58fr) minmax(0, 42fr); gap: 16px; }
+.cols #dcol { display: none; }
+.cols.book { grid-template-columns: minmax(0, 28fr) minmax(0, 36fr) minmax(0, 36fr); }
+.cols.book #dcol { display: flex; }
+@media (max-width: 1500px) {
+  .cols.book { grid-template-columns: minmax(0, 58fr) minmax(0, 42fr); }
+  .cols.book #wcol { display: none; }
+}
+.col { display: flex; flex-direction: column; min-height: 0; }
+.col h2 { font-size: var(--small); font-weight: 600; margin: 0 0 6px; display: flex; justify-content: space-between; gap: 8px; }
+.col h2 b { font-weight: 400; color: var(--mute); }
+.list { flex: 1; min-height: 120px; position: relative; overflow: auto; border: 1px solid var(--line); border-radius: 10px; background: #fff; overscroll-behavior: contain; padding: 4px 0; }
+.grp { font-size: 13px; font-weight: 600; color: var(--mute); padding: 10px 14px 3px; }
+.divider { margin: 6px 10px; padding: 7px 12px; border-left: 3px solid var(--sel); background: #FBEFE8; color: #7A3410; font-size: var(--small); border-radius: 0 6px 6px 0; }
+.more { padding: 8px 14px; font-size: 13px; color: var(--faint); }
+.row { padding: 4px 12px 4px 11px; margin: 0 4px; cursor: pointer; border-left: 3px solid var(--c, transparent); border-radius: 0 6px 6px 0; }
+.row:hover { background: #F5F5F1; }
+.row.sel { background: #FBEFE8; }
+.row.cur { background: #EEF4F9; }
+.rl { display: grid; grid-template-columns: minmax(0, 1fr) auto 72px; gap: 12px; align-items: center; font-size: var(--row); }
+.dl { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; gap: 10px; align-items: center; font-size: var(--row); }
+.dl .ix { color: var(--faint); text-align: right; font-size: 13px; }
+.k { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.off { color: var(--faint); }
+.tk { color: var(--mute); text-align: right; white-space: nowrap; font-size: var(--small); }
+.mini { height: 6px; background: var(--soft); border-radius: 3px; overflow: hidden; }
+.mini i { display: block; height: 100%; border-radius: 3px; }
+.tag { font-size: 13px; color: var(--faint); white-space: nowrap; }
+.dl + .pv { padding-left: 54px; }
+.pv { font-size: var(--small); color: var(--mute); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.full { margin: 6px 0 4px; max-height: 300px; overflow: auto; background: #F7F7F4; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font: 13px/1.45 var(--mono); white-space: pre-wrap; word-break: break-word; color: #2C2F33; cursor: text; }
+.empty { color: var(--mute); padding: 14px; font-size: var(--small); }
+
+/* card */
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 20px 24px; overflow: auto; min-height: 0; }
+.card h3 { margin: 0 0 8px; font-size: var(--title); line-height: 1.2; font-weight: 600; }
+.card .l { margin: 0; font-size: var(--cbody); line-height: 1.35; }
+.card .num { font-size: var(--num); font-weight: 600; margin: 14px 0 4px; letter-spacing: -.02em; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.card .num small { font-size: .5em; color: var(--mute); font-weight: 400; letter-spacing: 0; }
+.card p { margin: 8px 0; }
+.card .note { color: var(--mute); font-size: var(--small); }
+.facts { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; margin: 8px 0; font-size: var(--small); }
+.facts dt { color: var(--mute); }
+.facts dd { margin: 0; word-break: break-word; }
+.flag { border-left: 3px solid #E69F00; background: #FCF4E2; padding: 6px 10px; border-radius: 0 6px 6px 0; margin: 8px 0; font-size: var(--small); }
+.take { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; margin-top: 14px; font-size: var(--small); }
+.take b { display: block; font-size: var(--small); margin-bottom: 2px; }
+.take p { margin: 0; color: #33363A; }
+.act { display: flex; gap: 10px; flex-wrap: wrap; margin: 12px 0 0; }
+.btn.primary { background: var(--ink); border-color: var(--ink); color: #fff; font-size: var(--small); }
+.link { color: var(--win); }
+details.det { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 8px; font-size: var(--small); }
+details.det summary { cursor: pointer; color: var(--mute); }
+.diff { width: 100%; border-collapse: collapse; margin: 8px 0; }
+.diff td, .diff th { padding: 3px 6px; text-align: right; border-bottom: 1px solid var(--line); }
+.diff td:first-child, .diff th:first-child { text-align: left; }
+.diff th { color: var(--mute); font-weight: 400; }
+.ba { display: grid; grid-template-columns: auto 1fr auto; gap: 8px 12px; align-items: center; margin: 12px 0 4px; font-size: var(--small); }
+.ba .stack { height: 22px; border-radius: 6px; }
+.ba .stack i:last-child { border-radius: 0 4px 4px 0; }
+.also { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; align-items: center; font-size: 13px; color: var(--mute); }
+.also button { border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 2px 10px; font-size: 13px; }
+
+/* cache */
+#vcache { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
+.cachewrap { position: relative; flex: 1; min-height: 160px; }
+.cachewrap svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.tip { position: absolute; pointer-events: none; background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; font-size: 13px; line-height: 1.5; box-shadow: 0 6px 18px rgba(23,24,26,.12); white-space: nowrap; }
+
+.status { flex: 1; min-height: 0; padding: 40px 10px; text-align: center; color: var(--mute); overflow: auto; }
+.status.err { color: #8A3A1E; }
+.status h2 { color: var(--ink); font-size: 22px; margin: 0 0 6px; }
+#toast { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 8px 16px; border-radius: 8px; font-size: 15px; z-index: 20; }
+#keys { border: 1px solid var(--line); border-radius: 12px; padding: 20px 26px; background: var(--card); color: var(--ink); font-size: 16px; }
+#keys::backdrop { background: rgba(23,24,26,.3); }
+#keys h2 { margin: 0 0 10px; font-size: 20px; }
+#keys dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 18px; margin: 0; }
+#keys dt { font-weight: 600; }
+#keys dd { margin: 0; color: var(--mute); }
+@media (max-width: 900px) { .shell { height: auto; } .cols, .cols.book { grid-template-columns: 1fr; } .list { height: 50vh; } .top { flex-wrap: wrap; } }
+@media (prefers-reduced-motion: no-preference) { .stack i { transition: width .12s linear; } }
+</style>
+</head>
+<body>
+<div class="shell">
+  <header class="top">
+    <div class="who">
+      <nav class="crumbs" id="crumbs"></nav>
+      <div class="tline">
+        <button id="title" aria-haspopup="true" aria-expanded="false">Context window explorer <small>&#9662;</small></button>
+        <span id="sub"></span>
+      </div>
+    </div>
+    <div class="tools" id="tools" hidden>
+      <span class="seg" role="tablist">
+        <button role="tab" data-tab="window" aria-selected="true">Window</button>
+        <button role="tab" data-tab="cache" aria-selected="false">Cache</button>
+      </span>
+      <button class="btn" id="tText" aria-pressed="false">Show text<kbd>T</kbd></button>
+      <button class="btn" id="tBook" aria-pressed="false">Show book records<kbd>B</kbd></button>
+      <button class="btn" id="live" aria-pressed="false" title="Live tail: read new records as they are written and follow the newest"><span class="d"></span>Live</button>
+    </div>
+    <div class="picker" id="picker" hidden>
+      <div class="pq">
+        <input id="q" type="search" placeholder="Find a session: id prefix or project folder name" aria-label="Find a session" autocomplete="off">
+        <button class="btn" id="latest">Open latest</button>
+      </div>
+      <div id="results"></div>
+    </div>
+  </header>
+
+  <div id="main" hidden style="display:contents">
+    <div class="hero" id="hero"></div>
+    <div>
+      <div class="stack" id="stack" role="img"></div>
+      <div class="legend" id="legend" style="margin-top:8px"></div>
+    </div>
+    <nav class="steps" id="steps" aria-label="Chapters"></nav>
+    <section class="book">
+      <div class="bwrap"><canvas id="strip" aria-label="Every record in the file; blue columns are in the window"></canvas><svg id="marks" aria-label="Session events"></svg></div>
+      <div class="bhead"><span><i class="sw" style="background:var(--disk)"></i>BOOK · every record on disk</span><span><i class="sw" style="background:var(--win)"></i>PAGE · in the next request</span></div>
+      <input type="range" id="range" min="0" max="0" value="0" aria-label="Position in session">
+      <div class="pos"><span><button class="pill" id="now" hidden>Jump to now</button> <button class="hint" id="help">? keys</button></span><span id="posl"></span></div>
+    </section>
+
+    <div class="mainv">
+      <section id="vwin" class="cols">
+        <div class="col" id="dcol"><h2>On disk <b id="dcount"></b></h2><div class="list" id="disk"></div></div>
+        <div class="col" id="wcol"><h2>In the window <b id="wcount"></b></h2><div class="list" id="win"></div></div>
+        <aside class="card" id="card" aria-live="polite"></aside>
+      </section>
+      <section id="vcache" hidden>
+        <div class="legend" id="clegend"></div>
+        <div class="cachewrap"><svg id="cache"></svg><div class="tip" id="tip" hidden></div></div>
+      </section>
+    </div>
+  </div>
+  <div class="status" id="status" hidden><div id="smsg"></div></div>
+</div>
+<div id="toast" role="status" hidden></div>
+<dialog id="keys">
+  <h2>Keys</h2>
+  <dl>
+    <dt>PageDown / Space</dt><dd>next story stop</dd><dt>PageUp</dt><dd>previous story stop</dd>
+    <dt>1 - 8</dt><dd>chapter; again for the next occurrence</dd><dt>&larr; &rarr;</dt><dd>one record</dd>
+    <dt>[ ]</dt><dd>previous / next event</dd><dt>Home / End</dt><dd>start / newest (End follows live)</dd>
+    <dt>B</dt><dd>show book records</dd><dt>T</dt><dd>show text previews</dd><dt>D</dt><dd>card details</dd>
+    <dt>C</dt><dd>cache view</dd><dt>Esc</dt><dd>clear selection</dd><dt>?</dt><dd>this list</dd>
+  </dl>
+</dialog>
+
+<script>
+'use strict';
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+const enc = encodeURIComponent;
+const fmt = n => n == null ? '-' : n < 1000 ? String(Math.round(n)) : n < 1e6 ? (n / 1e3).toFixed(n < 1e4 ? 1 : 0) + 'K' : (n / 1e6).toFixed(2) + 'M';
+const num = n => Number(n).toLocaleString('en-US');
+const dur = s => s < 90 ? Math.round(s) + ' s' : s < 5400 ? Math.round(s / 60) + ' min' : (s / 3600).toFixed(1) + ' h';
+const total = u => u ? (u.in || 0) + (u.cr || 0) + (u.cw || 0) : null;
+const mb = b => { const m = b / 1048576; return (m < 10 ? m.toFixed(1) : m.toFixed(0)) + ' MB'; };
+const when = ts => { if (!ts) return ''; const d = new Date(ts), z = n => String(n).padStart(2, '0');
+  return `${d.getDate()} ${d.toLocaleString('en-GB', {month: 'short'})} ${z(d.getHours())}:${z(d.getMinutes())}`; };
+// "C--Development-ilay-father-premium-videos" -> "father-premium-videos"
+const proj = s => String(s || '').replace(/^[A-Za-z]--/, '').split('-').filter(Boolean).slice(-3).join('-');
+
+// [key, label, colour, dark text]
+const CATS = [
+  ['gap', 'Not itemised (system prompt, tools, estimate error)', '#6B6B6B', 0],
+  ['under', 'Unattributed (estimate error)', '#C9C9C4', 1],
+  ['instructions', 'Instructions', '#0072B2', 0],
+  ['skills', 'Skills', '#E69F00', 1],
+  ['reminders', 'Reminders', '#56B4E9', 1],
+  ['summary', 'Compact summary', '#D55E00', 0],
+  ['messages', 'Messages', '#009E73', 1],
+  ['tool_results', 'Tool results', '#CC79A7', 1],
+];
+const CC = Object.fromEntries(CATS.map(c => [c[0], c[2]]));
+const TIP = {gap: 'API usage minus what the file itemises at 4 chars/token: the system prompt and tool definitions (not stored in the file) plus estimate error. Split under Details.'};
+// bars show system prompt + tools and the estimate error as one grey part; Details keeps the split
+const view = s => Object.assign({}, s, {gap: (s.gap || 0) + (s.under || 0), under: 0});
+const TAG = {
+  instructions: 'Instructions loaded', skill_listing: 'Skill listing', nested_memory: 'Nested CLAUDE.md', edited_file: 'File edited on disk',
+  persisted: 'Big tool output persisted', subagent: 'Subagent', compact: 'Compaction', handoff: '/handoff', clear: '/clear', model: '/model switch',
+  skill: 'Skill invoked', invoked_skills: 'Skill bodies re-injected', gap5: 'Gap over 5 min', gap60: 'Gap over 1 h',
+};
+const BOOK_NOTE = 'The file keeps everything. The model only sees the page.';
+const TAKE = {
+  launch: 'A fresh session is already tens of thousands of tokens before your first word.',
+  nested_memory: 'Folder rules load when Claude touches the folder, not at launch.',
+  edited_file: 'CLAUDE.md is read once. Mid-session edits wait for /clear, /compact or a restart.',
+  edited_other: 'Changes to files Claude read come back as a reminder, so the model notices.',
+  persisted: 'Big output stays on disk. Small output rides along in every request.',
+  subagent: 'Hand big reads to a subagent: its window fills, yours gets the summary.',
+  compact: 'The summary, the last few messages and re-read files make the new page. /resume starts here too.',
+  handoff: 'A handoff costs nothing until something reads it.',
+  clear: 'Nothing from the old chat comes along. CLAUDE.md, MEMORY.md and skills load fresh.',
+  model: 'Switching models mid-session pays to write the whole history to cache again (expected, not verified).',
+  skill: 'Many skills cost little until used. Each one used costs again after every compaction.',
+  gap: 'Long breaks make the next request pay full price for the whole window.',
+};
+const USE = [
+  [1, 'Book vs page', ['instructions', 'skill_listing']],
+  [2, 'What enters', ['nested_memory', 'edited_file', 'instructions']],
+  [3, 'Big tool output', ['persisted']],
+  [4, 'Subagents', ['subagent']],
+  [5, '/compact', ['compact', 'handoff']],
+  [6, '/clear', ['clear']],
+  [7, 'Cache', ['gap60', 'gap5', 'model']],
+  [8, 'Skills', ['skill', 'invoked_skills', 'skill_listing']],
+];
+const CH = {};  // tag -> first chapter that covers it (the number on its marker)
+for (const [n, , tags] of USE) for (const t of tags) CH[t] = CH[t] || n;
+const PRIO = ['compact', 'clear', 'subagent', 'persisted', 'model', 'handoff', 'nested_memory', 'skill', 'invoked_skills', 'instructions', 'skill_listing', 'edited_file'];
+const SENT = new Set(['user', 'assistant', 'attachment', 'system']);
+const DISK_ROWS = 150;
+
+const S = {path: null, meta: null, recs: [], p: 0, tab: 'window', sel: null, open: new Set(), texts: new Map(),
+  sub: null, cmp: null, markers: [], nextReq: [], reqs: [], winCache: new Map(), ctx: 200000, firstPrompt: Infinity,
+  poll: null, polling: false, gen: 0, live: false, follow: true, book: false, text: false, details: false, stops: [], story: -1, has: []};
+
+async function api(url) {
+  const r = await fetch(url, {cache: 'no-store'});
+  if (!r.ok) { const e = new Error(await r.text().catch(() => '') || r.statusText); e.status = r.status; throw e; }
+  return r.json();
+}
+
+// ---------- window rule (port of ctx.py window_chain + in_window) ----------
+const isAgent = () => !!(S.meta && S.meta.agent);  // subagent files are all sidechain: treat the file as its own main chain
+const mainRec = r => isAgent() || !r.side;
+function inWindow(r) {
+  if (r.type === 'attachment') return !!r.rendered;
+  if (r.type === 'system') return false;
+  return (r.type === 'user' || r.type === 'assistant') && (r.summary || !r.tonly);
+}
+function windowAt(p) {
+  if (S.winCache.has(p)) return S.winCache.get(p);
+  const recs = S.recs, by = new Map();
+  for (let k = 0; k <= p; k++) { const r = recs[k]; if (r.uuid && mainRec(r)) by.set(r.uuid, r); }
+  let leaf = null;
+  for (let k = p; k >= 0; k--) { const r = recs[k]; if (by.has(r.uuid) && SENT.has(r.type)) { leaf = r; break; } }
+  const chain = [];
+  while (leaf) { chain.push(leaf); if (leaf.subtype === 'compact_boundary') break; leaf = by.get(leaf.parent); }
+  chain.reverse();
+  const boundary = chain.length && chain[0].subtype === 'compact_boundary' ? chain[0] : null;
+  // the kept-verbatim tail sits before the boundary on disk; Claude Code splices it back in after the anchor
+  const cm = boundary && boundary.cm;
+  if (cm && cm.keptUuids && cm.keptUuids.length) {
+    const have = new Set(chain.map(r => r.uuid)), old = new Map();
+    for (let k = 0; k < boundary._p; k++) if (recs[k].uuid && mainRec(recs[k])) old.set(recs[k].uuid, recs[k]);
+    const tail = [...new Set(cm.keptUuids)].filter(u => !have.has(u) && old.has(u)).map(u => old.get(u));
+    let at = chain.findIndex(r => r.uuid === cm.anchor);
+    if (at < 0) at = chain.findIndex(r => r.summary);  // anchor not written yet: right after the summary, else the boundary
+    chain.splice(at < 0 ? 1 : at + 1, 0, ...tail);
+  }
+  const rows = chain.filter(inWindow), cats = {};
+  let est = 0;
+  for (const r of rows) { est += r.tok || 0; const c = r.cat || 'messages'; cats[c] = (cats[c] || 0) + (r.tok || 0); }
+  const w = {rows, boundary, est, cats, set: new Set(rows), chain: new Set(chain)};
+  if (S.winCache.size > 400) S.winCache.clear();
+  S.winCache.set(p, w);
+  return w;
+}
+function nextUsage(p) { const q = S.nextReq[p]; return q == null ? null : {q, u: S.recs[q].usage}; }
+function catSums(p) {
+  const w = windowAt(p), n = nextUsage(p), t = n ? total(n.u) : null;
+  // usage is only comparable with the window that request was built from (q - 1); no later request: use the last one
+  const gapAt = q => q == null ? 0 : Math.max(0, total(S.recs[q].usage) - (q > 0 ? windowAt(q - 1).est : 0));
+  const gap = gapAt(n ? n.q : [...S.reqs].reverse().find(k => k <= p));
+  // heuristic: the first request has almost no messages, so its gap is ~ system prompt + tools; the rest grows with the window
+  const base = S.reqs.length ? gapAt(S.reqs[0]) : gap;
+  const fixed = Math.min(gap, base);
+  return Object.assign({gap: fixed, under: gap - fixed}, w.cats, {_total: t, _est: w.est + (t == null ? gap : 0)});
+}
+
+// ---------- derive markers, requests ----------
+function derive() {
+  const recs = S.recs, n = recs.length;
+  recs.forEach((r, k) => r._p = k);  // array position; window rows use it to find their place
+  S.winCache.clear();
+  S.nextReq = new Array(n);
+  let nxt = null;
+  for (let k = n - 1; k >= 0; k--) { S.nextReq[k] = nxt; const r = recs[k]; if (r.type === 'assistant' && r.usage && mainRec(r)) nxt = k; }
+  S.reqs = [];
+  let big = false;
+  S.firstPrompt = Infinity;
+  const m = [], seenAgent = new Set();
+  let lastT = null;
+  recs.forEach((r, k) => {
+    if (r.type === 'assistant' && r.usage && mainRec(r)) { S.reqs.push(k); if (total(r.usage) > 200000) big = true; }
+    if (r.model && String(r.model).includes('[1m]')) big = true;
+    if (S.firstPrompt === Infinity && isPrompt(r)) S.firstPrompt = k;
+    for (const t of r.ev || []) {
+      const id = t === 'subagent' && r.agentLink && r.agentLink.id;  // the call and its result point at the same agent
+      if (id && seenAgent.has(id)) continue;
+      if (id) seenAgent.add(id);
+      m.push({p: k, tag: t});
+    }
+    if ((r.type === 'user' || r.type === 'assistant') && r.ts) {
+      const t = Date.parse(r.ts) / 1000;
+      if (lastT != null && t - lastT > 300) m.push({p: k, tag: t - lastT > 3600 ? 'gap60' : 'gap5', dt: t - lastT});
+      if (!isNaN(t)) lastT = t;
+    }
+  });
+  m.sort((a, b) => a.p - b.p);
+  S.markers = m;
+  S.ctx = big ? 1e6 : 2e5;
+}
+// presenter path: one stop per idea, in teaching order; absent ones skipped
+function storyStops() {
+  const M = S.markers, first = f => M.find(f), is = t => m => m.tag === t;
+  const kb = m => (S.recs[m.p].persisted || {}).kb || 0;
+  const per = M.filter(is('persisted')).sort((a, b) => kb(b) - kb(a))[0];
+  S.stops = [[first(is('instructions')), 1], [first(is('nested_memory')), 2],
+    [first(m => m.tag === 'edited_file' && /CLAUDE\.md$/i.test(S.recs[m.p].preview || '')), 2], [per, 3], [first(is('subagent')), 4],
+    [first(is('compact')), 5], [first(is('clear')), 6], [first(is('gap60')), 7], [first(is('model')), 7], [first(is('skill')), 8]]
+    .filter(s => s[0]).map(([m, ch]) => ({m, ch}));
+  S.has = USE.map(([, , tags]) => M.some(m => tags.includes(m.tag)));
+}
+
+// ---------- navigation ----------
+const last = () => S.recs.length - 1;
+function setP(p, opts = {}) {
+  p = Math.max(0, Math.min(last(), p | 0));
+  if (p < last() && !opts.keepFollow) S.follow = false;
+  S.p = p;
+  if (!opts.keepSel) S.sel = null;
+  schedule();
+}
+function toEnd() { S.follow = true; setP(last(), {keepFollow: true}); }
+let raf = 0;
+function schedule() { if (!raf) raf = requestAnimationFrame(() => { raf = 0; render(); }); }
+
+function selectMarker(mk, cluster, ch) {
+  S.sel = {p: mk.p, tag: mk.tag, dt: mk.dt, cluster, ch};
+  // a compaction is clearer after it: land just before the first request built from the new page
+  const q = mk.tag === 'compact' ? S.nextReq[mk.p] : null;
+  setP(q != null ? q - 1 : mk.p, {keepSel: true});
+}
+function stepMarker(dir) {
+  const m = S.markers;
+  const mk = dir > 0 ? m.find(x => x.p > S.p) : [...m].reverse().find(x => x.p < S.p);
+  if (mk) selectMarker(mk);
+}
+function story(dir) {
+  if (!S.stops.length) return toast('No story stops in this session');
+  S.story = Math.max(0, Math.min(S.stops.length - 1, S.story + dir));
+  const s = S.stops[S.story];
+  if (S.tab !== 'window' && s.ch !== 7) setTab('window');
+  selectMarker(s.m, null, s.ch);
+}
+function chapter(n) {
+  const [, l, tags] = USE[n - 1], hits = S.markers.filter(m => tags.includes(m.tag));
+  if (!hits.length) return toast(`${l}: Not in this session`);
+  // first press: the chapter's headline event (tags are in priority order); again: the next one in the file
+  const best = hits.reduce((a, m) => tags.indexOf(m.tag) < tags.indexOf(a.tag) ? m : a);
+  const nx = (S.sel && S.sel.ch === n && hits.find(m => m.p > S.p)) || best;
+  if (S.tab !== 'window' && n !== 7) setTab('window');
+  selectMarker(nx, null, n);
+}
+let toastT = 0;
+function toast(msg) { const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => t.hidden = true, 1800); }
+
+async function load(path, push) {
+  const gen = ++S.gen;
+  cardSeq++;  // drop any card still being built for the old session
+  stopPoll();
+  Object.assign(S, {path, meta: null, recs: [], sel: null, sub: null, cmp: null, story: -1});
+  S.open.clear(); S.texts.clear(); S.winCache.clear();
+  if (push) history.pushState({}, '', path ? '?path=' + enc(path) : location.pathname);
+  closePicker();
+  $('#crumbs').innerHTML = '';
+  if (!path) return showPicker();
+  showStatus('<h2>Reading session</h2>Parsing the file. Large sessions take a few seconds.');
+  try {
+    const d = await api('/api/session?path=' + enc(path) + '&since=0');
+    if (gen !== S.gen) return;
+    S.meta = d; S.recs = d.records || [];
+    if (!S.recs.length) { S.meta = null; return showStatus('<h2>This session file is empty</h2>Nothing has been written yet. Turn on live tail after it starts, or pick another session.', false, true); }
+    derive(); storyStops();
+    S.p = last(); S.follow = true;
+    showMain();
+    if (S.live) startPoll();
+  } catch (e) {
+    if (gen !== S.gen) return;
+    const msg = e.status === 403 ? '<h2>That file is outside the sessions folder</h2>The viewer only reads files under ~/.claude/projects. Pick a session below.'
+      : e.status === 404 ? '<h2>No session file at that path</h2>It may have been moved or deleted. Pick a session below.'
+      : '<h2>Could not read the session</h2>' + esc(e.message || 'The server did not answer. Is ctxview.py still running?');
+    showStatus(msg, true, true);
+  }
+}
+window.addEventListener('popstate', () => load(new URLSearchParams(location.search).get('path'), false));
+
+function showStatus(html, err, withPicker) {
+  $('#main').hidden = true; $('#tools').hidden = true;
+  const st = $('#status'); st.hidden = false; st.className = 'status' + (err ? ' err' : ''); $('#smsg').innerHTML = html;
+  if (withPicker) openPicker(true);
+}
+function showPicker() {
+  setTitle('Context window explorer', 'What the session file holds on disk, and what the model reads on its next request.');
+  showStatus('<h2>Pick a session</h2>Newest sessions first. Search by id prefix or project folder name.', false, true);
+}
+function setTitle(t, sub) { $('#title').innerHTML = esc(t) + (S.meta ? ' <small>&#9662;</small>' : ''); $('#sub').textContent = sub; }
+function showMain() {
+  $('#status').hidden = true; $('#main').hidden = false; $('#tools').hidden = false;
+  const d = S.meta;
+  if (d.agent) {
+    const parent = d.path.replace(/[\\/]subagents[\\/][^\\/]+$/, '') + '.jsonl';
+    $('#crumbs').innerHTML = `<button id="back">Session ${esc(parent.split(/[\\/]/).pop().slice(0, 8))}</button> / subagent ${esc(d.agent.agentType || '')}`;
+    $('#back').onclick = () => load(parent, true);
+    setTitle('Subagent: ' + (d.agent.agentType || 'agent'), `${d.agent.description || ''} · ${num(S.recs.length)} records · ${mb(d.size)}`);
+  } else {
+    const parts = d.path.split(/[\\/]/);
+    setTitle('Session ' + String(d.id || '').slice(0, 8), `${proj(parts[parts.length - 2])} · ${num(S.recs.length)} records · ${mb(d.size)}`);
+  }
+  renderSteps(); renderMarks(); render();
+}
+
+// ---------- picker ----------
+function openPicker(inline) {
+  const pk = $('#picker');
+  pk.classList.toggle('inline', !!inline);
+  (inline ? $('#status') : $('.top')).appendChild(pk);
+  pk.hidden = false;
+  $('#title').setAttribute('aria-expanded', !inline);
+  search($('#q').value.trim());
+  if (!inline) $('#q').focus();
+}
+function closePicker() { if (!S.meta && !$('#status').hidden) return; $('#picker').hidden = true; $('#title').setAttribute('aria-expanded', false); }
+let qT = 0;
+let searchSeq = 0;
+async function search(q) {
+  const box = $('#results'), seq = ++searchSeq;
+  try {
+    const list = await api('/api/sessions?q=' + enc(q));
+    if (seq !== searchSeq) return;
+    box.innerHTML = list.length ? list.map(s => `<div class="res" tabindex="0" data-path="${esc(s.path)}">
+      <span class="t">${esc(s.title || '(untitled)')}</span><span class="s">${esc(String(s.id).slice(0, 8))}</span>
+      <span class="m">${esc(proj(s.project))} · ${new Date(s.mtime * 1000).toLocaleString()} · ${mb(s.size)}</span></div>`).join('')
+      : `<div class="empty">No sessions match "${esc(q)}". Try an id prefix or part of a project folder name.</div>`;
+  } catch (e) { box.innerHTML = `<div class="empty">Session list failed: ${esc(e.message)}</div>`; }
+}
+$('#title').onclick = () => { if (!S.meta) return; if ($('#picker').hidden) openPicker(false); else closePicker(); };
+$('#q').addEventListener('input', e => { clearTimeout(qT); const v = e.target.value.trim(); qT = setTimeout(() => search(v), 200); });
+$('#q').addEventListener('keydown', e => { if (e.key === 'Escape') { closePicker(); e.target.blur(); } if (e.key === 'Enter') { const f = $('#results .res'); if (f) load(f.dataset.path, true); } });
+document.addEventListener('click', e => {
+  const r = e.target.closest('.res');
+  if (r) return load(r.dataset.path, true);
+  if (S.meta && !e.target.closest('#picker') && !e.target.closest('#title')) closePicker();
+});
+document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.classList && e.target.classList.contains('res')) load(e.target.dataset.path, true); });
+$('#latest').onclick = async () => {
+  try { const l = await api('/api/sessions?q=latest'); if (l.length) load(l[0].path, true); else showStatus('<h2>No sessions found</h2>Nothing under ~/.claude/projects yet.', false); }
+  catch (e) { showStatus('<h2>Could not list sessions</h2>' + esc(e.message), true); }
+};
+
+// ---------- render ----------
+function render() {
+  if (!S.meta) return;
+  const p = S.p, r = S.recs[p];
+  $('#range').max = last();
+  $('#range').value = p;
+  let t = p; while (t > 0 && !S.recs[t].ts) t--;  // bookkeeping records carry no timestamp
+  $('#posl').textContent = `line ${r.i} · ${when(S.recs[t].ts)}`;
+  $('#now').hidden = !(S.live && p < last());
+  renderHeader(); renderStrip(); moveCursor(); markSel(); stepOn();
+  if (S.tab === 'window') { if (S.book) renderDisk(); renderWin(); renderCard(); } else renderCache();
+}
+
+// segments of a stacked bar scaled to the context size; inside labels where the segment is >= 90px
+function segs(s, px) {
+  s = view(s);
+  return CATS.map(([k, l, c, dark]) => {
+    const v = s[k]; if (!v) return '';
+    const short = k === 'gap' ? 'Not itemised' : l, w = v / S.ctx * 100, lab = px && w * px / 100 >= (short.length + 6) * 8 + 16;
+    return `<i class="${k === 'gap' || k === 'under' ? 'hatch' : ''}" style="width:${w}%;background-color:${c};color:${dark ? 'var(--ink)' : '#fff'}" title="${esc(TIP[k] || l)}: ${fmt(v)}">${lab ? `<span>${esc(short)} ${fmt(v)}</span>` : ''}</i>`;
+  }).join('');
+}
+const badge = api => api ? '<span class="badge api" title="Next request, from API usage">API</span>'
+  : '<span class="badge" title="Estimate: no later request in this file. Window estimate plus the system prompt + tools gap from the last request.">estimate</span>';
+function renderHeader() {
+  const s = catSums(S.p), t = s._total, shown = t ?? s._est;
+  $('#hero').innerHTML = `<span><b>~${fmt(shown)}</b> of ${S.ctx === 1e6 ? '1M' : '200K'} tokens in the window</span>${badge(t != null)}`;
+  const st = $('#stack');
+  st.innerHTML = segs(s, st.clientWidth);
+  st.setAttribute('aria-label', 'Window by category: ' + CATS.map(([k, l]) => `${l} ${fmt(s[k] || 0)}`).join(', '));
+  const sv = view(s);
+  $('#legend').innerHTML = CATS.filter(([k]) => sv[k]).map(([k, l, c]) => `<span title="${esc(TIP[k] || l)}"><i class="sw${k === 'gap' || k === 'under' ? ' hatch' : ''}" style="background-color:${c}"></i>${esc(l)} <b>${fmt(sv[k])}</b></span>`).join('');
+}
+
+// ---------- stepper ----------
+function renderSteps() {
+  $('#steps').innerHTML = USE.map(([n, l], k) => `<button class="step${S.has[k] ? '' : ' no'}" data-n="${n}"${S.has[k] ? '' : ' title="Not in this session"'}><span class="n">${n}</span>${esc(l)}</button>`).join('');
+}
+function stepOn() {
+  const ch = S.sel ? S.sel.ch || CH[S.sel.tag] : 0;
+  document.querySelectorAll('.step').forEach(b => b.classList.toggle('on', +b.dataset.n === ch));
+}
+$('#steps').addEventListener('click', e => { const b = e.target.closest('.step'); if (b) chapter(+b.dataset.n); });
+
+// ---------- book strip ----------
+const SH = {top: 28, h: 40};  // strip position inside the 86px overlay
+function renderStrip() {
+  const cv = $('#strip'), W = cv.clientWidth, dpr = window.devicePixelRatio || 1, n = S.recs.length;
+  if (!W) return;
+  if (cv.width !== Math.round(W * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(SH.h * dpr); }
+  const col = new Uint8Array(W), at = k => Math.min(W - 1, Math.floor(k * W / n));
+  const cur = at(S.p);
+  for (let x = 0; x <= cur; x++) col[x] = 1;  // on disk at this point; later columns are not written yet
+  for (const r of windowAt(S.p).rows) col[at(r._p)] = 2;
+  const g = cv.getContext('2d'), fill = ['#E9E9E4', '#DADBD6', '#0072B2'];
+  g.clearRect(0, 0, cv.width, cv.height);
+  for (let x = 0; x < W;) {
+    let e = x; while (e < W && col[e] === col[x]) e++;
+    g.fillStyle = fill[col[x]]; g.fillRect(Math.floor(x * dpr), 0, Math.ceil((e - x) * dpr), cv.height);
+    x = e;
+  }
+}
+$('#strip').addEventListener('click', e => { const b = e.target.getBoundingClientRect(); setP(Math.floor((e.clientX - b.left) / b.width * S.recs.length)); });
+
+function xOf(p, W) { return (S.recs.length > 1 ? p / (S.recs.length - 1) : 0) * (W - 2) + 1; }
+let clusters = [];
+function renderMarks() {
+  const svg = $('#marks'), W = svg.clientWidth || 800, sb = SH.top + SH.h;
+  svg.setAttribute('viewBox', `0 0 ${W} 86`);
+  clusters = [];
+  let cur = null;
+  for (const m of S.markers) {
+    if (m.tag.startsWith('gap')) continue;
+    const x = xOf(m.p, W);
+    if (cur && x - cur.x < 22) cur.items.push(m);
+    else { cur = {x, items: [m]}; clusters.push(cur); }
+  }
+  const parts = [];
+  // idle gaps: >1 h always, >5 min only next to the cache chart
+  let lastLab = -1e9;
+  for (const m of S.markers) {
+    if (m.tag === 'gap5' && S.tab !== 'cache' || !m.tag.startsWith('gap')) continue;
+    const x = xOf(m.p, W), h = m.tag === 'gap60';
+    parts.push(`<line x1="${x}" x2="${x}" y1="${SH.top}" y2="${sb + 4}" stroke="${h ? '#17181A' : '#8A8F98'}" stroke-width="${h ? 2 : 1}"${h ? '' : ' stroke-dasharray="3 3"'}><title>${esc(TAG[m.tag])}: ${dur(m.dt)}</title></line>`);
+    if (h && x - lastLab > 34) { parts.push(`<text class="gl" x="${x}" y="${sb + 16}" text-anchor="middle">1 h</text>`); lastLab = x; }
+  }
+  clusters.forEach((c, k) => {
+    const tags = [...new Set(c.items.map(m => m.tag))], top = PRIO.find(x => tags.includes(x)) || tags[0];
+    c.top = c.items.find(m => m.tag === top);
+    const x = c.x, y = 12, more = c.items.length > 1;
+    const tip = esc(c.items.slice(0, 12).map(m => `${TAG[m.tag]} (line ${S.recs[m.p].i})`).join('\n') + (c.items.length > 12 ? `\n+${c.items.length - 12} more` : ''));
+    const shape = top === 'compact' ? `<rect class="mk" x="${x - 7.5}" y="${y - 7.5}" width="15" height="15" transform="rotate(45 ${x} ${y})"/>`
+      : top === 'clear' ? `<rect class="mk" x="${x - 9}" y="${y - 9}" width="18" height="18" rx="2"/>`
+      : `<circle class="mk" cx="${x}" cy="${y}" r="10"/>`;
+    const rule = top === 'compact' || top === 'clear' ? `<line x1="${x}" x2="${x}" y1="${y + 8}" y2="${sb}" stroke="#2B2D31" stroke-width="2"/>` : '';
+    parts.push(`<g data-k="${k}"><title>${tip}</title>${rule}${more ? `<circle class="ring" cx="${x}" cy="${y}" r="13"/>` : ''}<circle class="halo" cx="${x}" cy="${y}" r="${more ? 15.5 : 13.5}"/>${shape}<text x="${x}" y="${y + 4.2}" text-anchor="middle">${CH[top] || ''}</text></g>`);
+  });
+  parts.push(`<line id="mcur" y1="${SH.top - 4}" y2="${sb + 4}" stroke="#17181A" stroke-width="2"/>`);
+  svg.innerHTML = parts.join('');
+  moveCursor(); markSel();
+}
+function moveCursor() {
+  const l = document.getElementById('mcur'); if (!l) return;
+  const x = xOf(S.p, $('#marks').clientWidth || 800);
+  l.setAttribute('x1', x); l.setAttribute('x2', x);
+}
+function markSel() {
+  const s = S.sel;
+  document.querySelectorAll('#marks g[data-k]').forEach(g => g.classList.toggle('on', !!s && clusters[+g.dataset.k].items.some(m => m.p === s.p && m.tag === s.tag)));
+}
+$('#marks').addEventListener('click', e => {
+  const g = e.target.closest('[data-k]'); if (!g) return;
+  const c = clusters[+g.dataset.k];
+  selectMarker(c.top, c.items.length > 1 ? c.items : null);
+});
+$('#range').addEventListener('input', e => setP(+e.target.value));
+$('#now').onclick = toEnd;
+$('#help').onclick = () => $('#keys').showModal();
+window.addEventListener('resize', () => { if (S.meta) { renderMarks(); render(); } });
+
+// ---------- keys ----------
+document.addEventListener('keydown', e => {
+  if (!S.meta || e.ctrlKey || e.metaKey || e.altKey || $('#keys').open) return;
+  const t = e.target;
+  if (t.tagName === 'INPUT' && t.type !== 'range' || t.tagName === 'TEXTAREA' || t.isContentEditable) return;
+  if ((e.key === ' ' || e.key === 'Enter') && t.closest && t.closest('button, summary, a, .res')) return;  // let focused controls activate
+  const k = e.key, K = k.toLowerCase(), act = {
+    ArrowLeft: () => setP(S.p - 1), ArrowRight: () => setP(S.p + 1), '[': () => stepMarker(-1), ']': () => stepMarker(1),
+    Home: () => setP(0), End: toEnd, PageDown: () => story(1), ' ': () => story(1), PageUp: () => story(-1),
+    b: () => toggle('book'), t: () => toggle('text'), d: () => toggle('details'), c: () => setTab(S.tab === 'cache' ? 'window' : 'cache'),
+    Escape: () => { S.sel = null; schedule(); }, '?': () => $('#keys').showModal(),
+  }[k.length === 1 ? K : k] || (/^[1-8]$/.test(k) && (() => chapter(+k)));
+  if (act) { e.preventDefault(); act(); }
+});
+function toggle(f) {
+  S[f] = !S[f];
+  $('#tBook').setAttribute('aria-pressed', S.book); $('#tText').setAttribute('aria-pressed', S.text);
+  $('#vwin').classList.toggle('book', S.book);
+  schedule();
+}
+$('#tBook').onclick = () => toggle('book');
+$('#tText').onclick = () => toggle('text');
+
+// ---------- lists ----------
+function diskOnlyReason(r, w) {
+  if (!SENT.has(r.type)) return 'bookkeeping';
+  if (r.type === 'system') return 'system';
+  if (r.type === 'attachment' && !r.rendered) return 'unrendered';
+  if (!inWindow(r)) return 'transcript only';
+  if (!mainRec(r)) return 'sidechain';
+  if (!w.set.has(r)) return 'off the chain';
+  return null;
+}
+function kindLabel(r) {
+  const k = r.kind || r.type || '', m = /^(tool call|tool result): (.+)$/.exec(k);
+  if (m) return m[2] + (m[1] === 'tool call' ? ' call' : ' result');
+  if (k === 'you') return 'You';
+  return k.charAt(0).toUpperCase() + k.slice(1);
+}
+function fullText(r) {
+  if (!S.open.has(r.i)) return '';
+  const t = S.texts.get(r.i);
+  return `<pre class="full">${t == null ? 'Loading...' : esc(t)}</pre>`;
+}
+const pv = r => S.text && r.preview ? `<div class="pv">${esc(r.preview)}</div>` : '';
+// scroll only the list (scrollIntoView would also move the page)
+function reveal(list, row) {
+  if (!row) return;
+  const top = row.offsetTop, bot = top + row.offsetHeight;
+  if (top < list.scrollTop || bot > list.scrollTop + list.clientHeight) list.scrollTop = Math.max(0, bot - list.clientHeight + 8);
+}
+// a typed prompt, not a caveat / command output / tool result
+const isPrompt = r => r.type === 'user' && r.cat === 'messages' && !r.summary && !r.cmd && !/^\s*</.test(r.preview || '');
+function renderDisk() {
+  const p = S.p, w = windowAt(p), lo = Math.max(0, p - DISK_ROWS + 1), out = [];
+  if (lo > 0) out.push(`<div class="more">${num(lo)} earlier records not drawn. Scrub back to see them.</div>`);
+  for (let k = lo; k <= p; k++) {
+    const r = S.recs[k], why = diskOnlyReason(r, w), tag = why === 'sidechain' || why === 'off the chain' ? why : '';
+    out.push(`<div class="row${why ? ' off' : ''}${k === p ? ' cur' : ''}${S.sel && S.sel.p === k ? ' sel' : ''}" data-p="${k}"${why ? '' : ` style="--c:${CC[r.cat] || CC.messages}"`}>
+      <div class="dl"><span class="ix">${r.i}</span><span class="k">${esc(kindLabel(r))}</span><span class="tag">${tag}</span></div>${pv(r)}${fullText(r)}</div>`);
+  }
+  const el = $('#disk');
+  el.innerHTML = out.join('');
+  $('#dcount').textContent = `${num(p + 1)} records`;
+  reveal(el, el.querySelector('.sel') || el.querySelector('.cur'));
+}
+function renderWin() {
+  const p = S.p, w = windowAt(p), max = Math.max(1, ...w.rows.map(r => r.tok || 0)), out = [];
+  if (w.boundary) { const cm = w.boundary.cm || {}; out.push(`<div class="divider">Window starts here · compacted ${fmt(cm.pre)} → ${fmt(cm.post)}</div>`); }
+  let turn = 0;
+  out.push(`<div class="grp">${w.boundary ? 'After the compaction' : 'Before you type'}</div>`);
+  for (const r of w.rows) {
+    if (isPrompt(r)) out.push(`<div class="grp">Turn ${++turn}</div>`);
+    const c = CC[r.cat] || CC.messages;
+    const kept = w.boundary && r._p < w.boundary._p ? ' <span class="tag">kept verbatim</span>' : '';
+    out.push(`<div class="row${S.sel && S.sel.p === r._p ? ' sel' : ''}" data-p="${r._p}" style="--c:${c}">
+      <div class="rl"><span class="k">${esc(kindLabel(r))}${kept}</span><span class="tk">+${fmt(r.tok)}</span><span class="mini"><i style="width:${Math.max(2, (r.tok || 0) / max * 100)}%;background:${c}"></i></span></div>${pv(r)}${fullText(r)}</div>`);
+  }
+  if (!w.rows.length) out.push('<div class="empty">Nothing in the window yet at this point.</div>');
+  const el = $('#win');
+  el.innerHTML = out.join('');
+  $('#wcount').textContent = `${num(w.rows.length)} records · ~${fmt(w.est)} itemised`;
+  const sel = el.querySelector('.sel');
+  if (sel) reveal(el, sel); else el.scrollTop = el.scrollHeight;
+}
+
+async function toggleRow(p) {
+  const r = S.recs[p];
+  S.sel = {p, tag: (r.ev || [])[0] || null};
+  if (S.open.has(r.i)) S.open.delete(r.i);
+  else {
+    S.open.add(r.i);
+    if (!S.texts.has(r.i)) {
+      const path = S.path;
+      api('/api/text?path=' + enc(path) + '&i=' + r.i)
+        .then(d => d.text, e => '[could not load text: ' + (e.message || e.status) + ']')
+        .then(t => { if (S.path === path) { S.texts.set(r.i, t); schedule(); } });
+    }
+  }
+  schedule();
+}
+for (const id of ['#disk', '#win']) $(id).addEventListener('click', e => {
+  if (e.target.closest('.full')) return;
+  const row = e.target.closest('.row');
+  if (row) toggleRow(+row.dataset.p);
+});
+
+// ---------- tabs ----------
+function setTab(t) {
+  S.tab = t;
+  document.querySelectorAll('.seg button').forEach(b => b.setAttribute('aria-selected', b.dataset.tab === t));
+  $('#vwin').hidden = t !== 'window'; $('#vcache').hidden = t !== 'cache';
+  $('#tBook').hidden = $('#tText').hidden = t !== 'window';
+  renderMarks(); render();
+}
+document.querySelectorAll('.seg button').forEach(b => b.onclick = () => setTab(b.dataset.tab));
+
+// ---------- side data ----------
+async function getSub() {
+  if (!S.sub) { const path = S.path; S.sub = api('/api/subagents?path=' + enc(path)).catch(() => []); }
+  return S.sub;
+}
+async function getCmp() {
+  if (!S.cmp) { const path = S.path; S.cmp = api('/api/compacts?path=' + enc(path)).catch(() => []); }
+  return S.cmp;
+}
+
+// ---------- explanation card ----------
+const dl = rows => `<dl class="facts">${rows.filter(Boolean).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join('')}</dl>`;
+// title | two lines | one number | honesty flags + actions | takeaway | details
+function card({title, l1, l2, n, api, extra = '', act = '', take, details = ''}) {
+  return `<h3>${esc(title)}</h3><p class="l">${esc(l1)}</p><p class="l">${esc(l2)}</p>` +
+    (n != null ? `<div class="num"><span>${n}</span>${api == null ? '' : badge(api)}</div>` : '') + extra +
+    (act ? `<div class="act">${act}</div>` : '') +
+    (take ? `<div class="take"><b>Takeaway</b><p>${esc(take)}</p></div>` : '') +
+    (details ? `<details class="det"${S.details ? ' open' : ''}><summary>Details <span class="note">(D)</span></summary>${details}</details>` : '');
+}
+const plus = t => '+' + fmt(t);
+const firstReq = () => S.reqs.length ? total(S.recs[S.reqs[0]].usage) : null;
+let cardSeq = 0;
+async function renderCard() {
+  const el = $('#card'), seq = ++cardSeq, sel = S.sel;
+  let html;
+  if (!sel) {
+    const s = catSums(S.p), w = windowAt(S.p);
+    html = card({title: 'Book and page', l1: `Book: ${num(S.p + 1)} records on disk.`, l2: `Page: ${num(w.rows.length)} records go into the next request.`,
+      n: '~' + fmt(s._total ?? s._est), api: s._total != null, take: BOOK_NOTE,
+      details: dl([['On disk', `${num(S.p + 1)} records`], ['In window', `${num(w.rows.length)} records, ~${fmt(w.est)} est`],
+        ['System prompt + tools', `~${fmt(s.gap)} (gap on the first request)`],
+        ['Unattributed', `~${fmt(s.under)} (usage minus estimate minus the above${s._total != null ? '' : ', last request'}). Likely: code and JSON tokenize denser than 4 chars, images, thinking stored empty, tool schemas loaded mid-session. Not measured.`]]) +
+        '<p class="note">Pick a chapter, press PageDown, or click a marker or row to explain it.</p>'});
+  } else {
+    const slow = setTimeout(() => { if (seq === cardSeq) el.innerHTML = '<p class="note">Loading…</p>'; }, 150);
+    html = await cardFor(sel).catch(() => null);
+    clearTimeout(slow);
+  }
+  if (seq !== cardSeq || html == null) return;
+  if (sel && sel.cluster) html += `<div class="also">Also here: ${sel.cluster.map((m, k) => `<button data-ck="${k}">${esc(TAG[m.tag])} · line ${S.recs[m.p].i}</button>`).join('')}</div>`;
+  el.innerHTML = html;
+}
+$('#card').addEventListener('click', e => {
+  const b = e.target.closest('[data-ck]');
+  if (b && S.sel && S.sel.cluster) { const cl = S.sel.cluster; selectMarker(cl[+b.dataset.ck], cl); return; }
+  const o = e.target.closest('[data-open]');
+  if (o) load(o.dataset.open, true);
+});
+$('#card').addEventListener('toggle', e => { if (e.target.matches('details.det')) S.details = e.target.open; }, true);
+
+async function cardFor(sel) {
+  const p = sel.p, r = S.recs[p], tag = sel.tag, n = nextUsage(p);
+  const nu = n ? n.u : null, rec = ['Record', `line ${r.i}, ${esc(kindLabel(r))}`];
+  const cache = dl([['Next request', nu ? `${fmt(total(nu))} tokens` : 'none in file'], nu && ['Read from cache', fmt(nu.cr)], nu && ['Written to cache', fmt(nu.cw)], rec]);
+  switch (tag) {
+    case 'instructions': case 'skill_listing': {
+      const atLaunch = p < (S.reqs[0] ?? Infinity);  // before the first request; -p sessions write the prompt before the launch attachments
+      const d = dl([['This record', `~${fmt(r.tok)} tokens est`], ['Next request', nu ? `${fmt(total(nu))} tokens (API usage)` : '-'], rec]);
+      return atLaunch
+        ? card({title: 'Loaded before you type', l1: 'CLAUDE.md, MEMORY.md and the skill listing ride in the first request.', l2: 'None of it shows in your terminal.',
+          n: firstReq() != null ? `${fmt(firstReq())} <small>first request</small>` : plus(r.tok), api: firstReq() != null ? true : false, take: TAKE.launch, details: d})
+        : card({title: 'Re-loaded after compaction', l1: 'Instructions are re-read from disk.', l2: 'Edits made since launch apply now.', n: plus(r.tok), api: false, take: TAKE.launch, details: d});
+    }
+    case 'nested_memory': {
+      const rows = windowAt(p).rows, k = rows.indexOf(r), prev = rows.slice(0, k < 0 ? rows.length : k).reverse().find(x => x.cat === 'tool_results');
+      return card({title: 'Nested CLAUDE.md', l1: 'Entered right after a Read in its folder, not at launch.', l2: 'Gone after the next /compact, until the next Read.',
+        n: plus(r.tok), api: false, take: TAKE.nested_memory, details: dl([['File', esc(r.preview)], ['Arrived after', esc(prev ? `line ${prev.i}, ${kindLabel(prev)}` : '-')], rec])});
+    }
+    case 'edited_file':
+      return /CLAUDE\.md$/i.test(r.preview || '')
+        ? card({title: 'CLAUDE.md edited, not reloaded', l1: 'The window still holds the launch version.', l2: 'The edit lands on /clear, /compact or restart.', n: plus(r.tok), api: false, take: TAKE.edited_file, details: dl([['File', esc(r.preview)], rec])})
+        : card({title: 'File changed on disk', l1: 'Claude read this file earlier.', l2: 'A reminder with the change rides on the next request.', n: plus(r.tok), api: false, take: TAKE.edited_other, details: dl([['File', esc(r.preview)], rec])});
+    case 'persisted': {
+      const ps = r.persisted || {};
+      return card({title: 'Big output kept on disk', l1: 'Saved to tool-results/; the window gets a ~2 KB preview and the path.',
+        l2: ps.tok != null ? `Sent whole it would be ~${fmt(ps.tok)} tokens, in every request.` : 'Sent whole it would cost its full size, in every request.',
+        n: `${ps.kb != null ? ps.kb.toFixed(1) : '?'} KB → ~${fmt(r.tok)} <small>tokens</small>`, api: false, take: TAKE.persisted,
+        act: ps.path ? `<a class="link" target="_blank" rel="noopener" href="/api/file?path=${enc(ps.path)}">Open the full output</a>` : '',
+        details: dl([['Tool', esc(kindLabel(r))], ps.tok != null && ['Sent whole it would be', '~' + fmt(ps.tok) + ' tokens, every turn'], ['File', ps.path ? esc(ps.path) : 'path not recorded'], rec])});
+    }
+    case 'subagent': {
+      const L = r.agentLink || {}, list = await getSub();
+      const a = list.find(x => (L.path && x.path === L.path) || (L.id && /agent-([^\\/]+)\.jsonl$/.test(x.path) && x.path.endsWith('agent-' + L.id + '.jsonl')));
+      const type = (a && a.agentType) || L.agentType || '?';
+      let flags = '';
+      if (a && a.memory) flags += '<div class="flag">MEMORY.md in subagent: docs say no, this file says yes.</div>';
+      if (/^(Explore|Plan)$/.test(type)) flags += '<div class="flag">Explore and Plan start with no CLAUDE.md.</div>';
+      if (a && a.fork) flags += '<div class="flag">fork: copies the parent chat.</div>';
+      const path = L.path || (a && a.path);
+      return card({title: 'Subagent: ' + type, l1: 'Ran in its own window.', l2: 'Only its final message came back.',
+        n: a ? `${fmt(a.peak)} → ${fmt(a.back)} <small>peak → sent back</small>` : null, extra: flags, take: TAKE.subagent,
+        act: path ? `<button class="btn primary" data-open="${esc(path)}">Open subagent</button>` : '',
+        details: dl([['Task', esc((a && a.description) || L.description || '-')], a && ['Started with', esc(a.loaded)], a && ['Peak window', fmt(a.peak) + ' tokens'],
+          a && ['Sent back', '~' + fmt(a.back) + ' tokens'], a && ['Records', a.records], a && ['Reminders', esc((a.reminders || []).join(', ') || '-')],
+          !a && ['Details', 'no subagent file found for this call']])});
+    }
+    case 'compact': {
+      const c = (await getCmp()).find(x => x.i === r.i), cm = r.cm || {};
+      // each side = the window a real request read, paired with that request's usage
+      const prevQ = [...S.reqs].reverse().find(k => k < p);
+      const b = catSums(prevQ != null ? Math.max(0, prevQ - 1) : Math.max(0, p - 1)), a = catSums(n ? Math.max(p, n.q - 1) : S.recs.length - 1);
+      const vb = view(b), va = view(a);
+      const rows = CATS.map(([k, l, col]) => (vb[k] || va[k]) ? `<tr><td><i class="sw" style="background:${col}"></i> ${esc(l)}</td><td>${fmt(vb[k] || 0)}</td><td>${fmt(va[k] || 0)}</td></tr>` : '').join('');
+      const bar = (l, s) => `<span>${l}</span><div class="stack">${segs(s)}</div><b>${fmt(s._total ?? s._est)}</b>`;
+      return card({title: `/compact (${(c ? c.trigger : cm.trigger) || 'compact'})`, l1: 'The page was rewritten; the book got longer.', l2: 'Nested CLAUDE.md is gone until the next Read.',
+        n: `${fmt(c ? c.pre : cm.pre)} → ${fmt(c ? c.post : cm.post)} <small>conversation</small>`,
+        extra: `<p class="note">Below: the whole request before and after, system prompt and tools included (API).</p><div class="ba">${bar('Before', b)}${bar('After', a)}</div>`, take: TAKE.compact,
+        details: `<table class="diff"><tr><th>Window</th><th>before</th><th>after</th></tr>${rows}<tr><td>Next request (API)</td><td>${fmt(b._total)}</td><td>${fmt(a._total)}</td></tr></table>` +
+          dl([['Took', (c ? c.s : (cm.ms || 0) / 1000).toFixed(0) + ' s'], ['Kept verbatim', `${c ? c.kept : cm.kept} messages`],
+            ['Re-injected', esc(c ? c.reinjected.map(([x, k]) => k > 1 ? `${x} x${k}` : x).join(', ') : '-')], rec])});
+    }
+    case 'handoff':
+      return card({title: '/handoff', l1: 'The summary went to a file on disk.', l2: 'It enters the window only when read.', n: plus(r.tok), api: false, take: TAKE.handoff, details: dl([rec])});
+    case 'clear': {
+      const pv = S.meta.prev;
+      return card({title: '/clear: a new book', l1: 'A new session file starts here; the old one is untouched.', l2: 'The window starts over from launch.',
+        n: firstReq() != null ? `${fmt(firstReq())} <small>first request</small>` : null, api: firstReq() != null ? true : null, take: TAKE.clear,
+        extra: `<p class="note">${pv ? `This file continues from session ${esc(String(pv.id).slice(0, 8))}.` : 'The previous session file was not found in this folder.'}</p>`,
+        act: pv ? `<button class="btn primary" data-open="${esc(pv.path)}">Open previous session</button>` : '', details: dl([rec])});
+    }
+    case 'model': {
+      const set = S.recs.slice(p + 1, p + 4).map(x => /Set model to `([^`]+)`/.exec(x.preview || '')).find(Boolean);
+      const early = p < (S.reqs[0] ?? Infinity);
+      return card({title: '/model → ' + (set ? set[1] : 'model change'), l1: 'Each model has its own cache.',
+        l2: early ? 'Switched before the first request here, so there is no history to compare.' : 'Next request should read 0 from cache (expected, not verified).',
+        n: nu && !early ? `<small>cache read</small> ${fmt(nu.cr)}` : null, api: nu && !early ? true : null, take: TAKE.model, details: cache});
+    }
+    case 'skill': case 'invoked_skills': {
+      // the body is the skills record that follows the Skill call and its result
+      const body = tag === 'skill' ? S.recs.slice(p + 1, p + 6).find(x => x.cat === 'skills') : null;
+      return tag === 'skill'
+        ? card({title: 'Skill: ' + (r.skill || ''), l1: 'Until now only its one-line listing was in the window.', l2: 'The body enters now.', n: plus(body ? body.tok : r.tok), api: false, take: TAKE.skill, details: dl([rec, body && ['Body', `line ${body.i}`]])})
+        : card({title: 'Skill bodies re-injected', l1: 'Called skills come back after compaction.', l2: 'They cost their tokens again.', n: plus(r.tok), api: false, take: TAKE.skill, details: dl([rec])});
+    }
+    case 'gap5': case 'gap60':
+      return tag === 'gap5'
+        ? card({title: `${dur(sel.dt || 0)} idle`, l1: 'Over 5 min: subagent and compaction caches are cold.', l2: 'Main chat cache (1 h on a subscription) is still warm.',
+          n: nu ? `<small>cache read</small> ${fmt(nu.cr)}` : null, api: nu ? true : null, take: TAKE.gap, details: cache})
+        : card({title: `${dur(sel.dt || 0)} idle`, l1: 'Over 1 h: the main chat cache is cold too.', l2: 'The next request rewrites it.',
+          n: nu ? `<small>cache write</small> ${fmt(nu.cw)}` : null, api: nu ? true : null, take: TAKE.gap, details: cache});
+    default: {
+      const w = windowAt(S.p), why = diskOnlyReason(r, w);
+      const WHY = {bookkeeping: 'Bookkeeping for the app (titles, modes, snapshots). Never sent to the model.', system: 'System record: shown to you, never to the model.',
+        unrendered: 'Attachment without rendered text: stored, not sent.', 'transcript only': 'Visible in the transcript only, not sent.',
+        sidechain: 'Sidechain record (a subagent branch): not in the main window.', 'off the chain': 'Not on the current parentUuid chain: before the last compaction, or on another branch.'};
+      return card({title: kindLabel(r), l1: why ? 'On disk only.' : 'In the window.', l2: why ? WHY[why] : 'Sent with the next request.',
+        n: why ? null : plus(r.tok), api: why ? null : false, take: BOOK_NOTE,
+        details: dl([['Line', r.i], ['Type', esc(r.type + (r.subtype ? '/' + r.subtype : '') + (r.att ? '/' + r.att : ''))], ['Size', r.bytes + ' bytes'], ['Tokens', `~${fmt(r.tok)} est`]])});
+    }
+  }
+}
+
+// ---------- cache view ----------
+const CK = [['cr', 'Cache read', '#009E73'], ['cw', 'Cache write', '#D55E00'], ['in', 'Uncached input', '#0072B2']];
+const CM = {gap5: ['>5 min idle', '#8A8F98', 1, '4 3'], gap60: ['>1 h idle', '#17181A', 2, ''], model: ['/model (expected 0 from cache, not verified)', '#17181A', 1.5, '6 4']};
+let cacheGeo = null;
+function renderCache() {
+  const svg = $('#cache'), W = svg.clientWidth || 900, H = svg.clientHeight || 320, top = 24, bot = 26, left = 52, reqs = S.reqs;
+  const tags = new Set(S.markers.map(m => m.tag)), line = (c, w, d) => `<svg width="22" height="10"><line x1="1" x2="21" y1="5" y2="5" stroke="${c}" stroke-width="${w}" stroke-dasharray="${d}"/></svg>`;
+  $('#clegend').innerHTML = CK.filter(([k]) => reqs.some(q => S.recs[q].usage[k])).map(([, l, c]) => `<span><i class="sw" style="background:${c}"></i>${l}</span>`).join('') +
+    Object.entries(CM).filter(([t]) => tags.has(t)).map(([, [l, c, w, d]]) => `<span>${line(c, w, d)}${esc(l)}</span>`).join('');
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  if (!reqs.length) { svg.innerHTML = `<text x="${W / 2}" y="${H / 2}" text-anchor="middle" fill="#5E6166">No requests with usage in this file.</text>`; cacheGeo = null; return; }
+  const mx = Math.max(...reqs.map(k => total(S.recs[k].usage))), bw = (W - left) / reqs.length, ph = H - top - bot;
+  const y = v => top + ph - v / mx * ph, out = [];
+  for (const f of [0, .5, 1]) out.push(`<line x1="${left}" x2="${W}" y1="${y(mx * f)}" y2="${y(mx * f)}" stroke="#E3E3DE"/><text x="${left - 8}" y="${y(mx * f) + 4}" text-anchor="end" font-size="13" fill="#5E6166">${fmt(mx * f)}</text>`);
+  reqs.forEach((k, j) => {
+    const u = S.recs[k].usage, x = left + j * bw; let acc = 0;
+    for (const [key, , c] of CK) { const v = u[key] || 0; if (v) out.push(`<rect x="${x}" y="${y(acc + v)}" width="${Math.max(.6, bw - (bw > 3 ? 1 : 0))}" height="${y(acc) - y(acc + v)}" fill="${c}"/>`); acc += v; }
+  });
+  const reqIdx = p => { let lo = 0, hi = reqs.length; while (lo < hi) { const m = (lo + hi) >> 1; if (reqs[m] < p) lo = m + 1; else hi = m; } return lo; };
+  for (const m of S.markers) {
+    const st = CM[m.tag]; if (!st) continue;
+    const x = left + reqIdx(m.p) * bw;
+    out.push(`<line x1="${x}" x2="${x}" y1="${top}" y2="${H - bot}" stroke="${st[1]}" stroke-width="${st[2]}" stroke-dasharray="${st[3]}"/>`);
+    if (m.tag === 'model') out.push(`<text x="${x + 5}" y="${top - 8}" font-size="13" fill="#17181A">/model (expected 0 from cache, not verified)</text>`);
+  }
+  const n = S.nextReq[S.p], cx = left + (n == null ? reqs.length : reqIdx(n)) * bw + bw / 2;
+  if (n != null) out.push(`<line x1="${cx}" x2="${cx}" y1="${top - 4}" y2="${H - bot + 6}" stroke="#D55E00" stroke-width="2"/><text x="${Math.min(cx, W - 4)}" y="${H - 6}" text-anchor="${cx > W - 60 ? 'end' : cx < left + 60 ? 'start' : 'middle'}" font-size="13" fill="#17181A">next request</text>`);
+  svg.innerHTML = out.join('');
+  cacheGeo = {left, bw};
+}
+function cacheHit(e) {
+  if (!cacheGeo) return -1;
+  const b = $('#cache').getBoundingClientRect(), j = Math.floor((e.clientX - b.left - cacheGeo.left) / cacheGeo.bw);
+  return j >= 0 && j < S.reqs.length ? j : -1;
+}
+$('#cache').addEventListener('mousemove', e => {
+  const j = cacheHit(e), tip = $('#tip');
+  if (j < 0) { tip.hidden = true; return; }
+  const r = S.recs[S.reqs[j]], u = r.usage, wrap = $('.cachewrap').getBoundingClientRect();
+  tip.innerHTML = `request ${j + 1}, line ${r.i}<br>${r.ts ? esc(new Date(r.ts).toLocaleTimeString()) + '<br>' : ''}total ${fmt(total(u))}<br>cache read ${fmt(u.cr)}<br>cache write ${fmt(u.cw)}<br>input ${fmt(u.in)}<br>output ${fmt(u.out)}`;
+  tip.hidden = false;
+  const x = e.clientX - wrap.left;
+  tip.style.left = Math.min(x + 14, wrap.width - 170) + 'px'; tip.style.top = Math.min(e.clientY - wrap.top + 12, wrap.height - 140) + 'px';
+});
+$('#cache').addEventListener('mouseleave', () => $('#tip').hidden = true);
+$('#cache').addEventListener('click', e => { const j = cacheHit(e); if (j >= 0) setP(Math.max(0, S.reqs[j] - 1)); });
+
+// ---------- live tail ----------
+function startPoll() { stopPoll(); S.poll = setInterval(pollOnce, 1000); }
+function stopPoll() { if (S.poll) clearInterval(S.poll); S.poll = null; }
+async function pollOnce() {
+  if (S.polling || !S.meta) return;
+  S.polling = true;
+  const path = S.path, held = S.meta.total;
+  try {
+    const gen = S.gen, d = await api('/api/session?path=' + enc(path) + '&since=' + held);
+    if (gen !== S.gen || !S.live || held !== S.meta.total) return;  // reloaded, live turned off, or a stale reply
+    if (d.total < held) { load(path, false); return; }  // file shrank: start over
+    const add = d.records || [];
+    S.meta.total = d.total; S.meta.size = d.size;
+    if (!add.length) return;
+    S.recs.push(...add);
+    S.sub = null; S.cmp = null;
+    derive(); storyStops();
+    if (S.follow) S.p = last();
+    renderSteps(); renderMarks(); render();
+  } catch (e) { /* transient: next tick retries */ }
+  finally { S.polling = false; }
+}
+$('#live').onclick = () => {
+  S.live = !S.live;
+  $('#live').setAttribute('aria-pressed', S.live);
+  if (S.live) { startPoll(); toEnd(); } else { stopPoll(); schedule(); }
+};
+
+load(new URLSearchParams(location.search).get('path'), false);
+</script>
+</body>
+</html>
