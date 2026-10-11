@@ -1,6 +1,8 @@
 """Local viewer for Claude Code session files: what is on disk vs what the model sees.
 
-  python ctxview.py [latest | <session-id prefix> | <path.jsonl>] [--port 8765] [--no-open]
+  python ctxview.py [latest | <session-id prefix> | <path.jsonl>] [--port 8765] [--at LINE] [--no-open]
+
+--at LINE opens the timeline at that 0-based line of the session file (also ?at=LINE in the URL).
 
 Serves index.html and a read-only JSON API on 127.0.0.1. Only files under ~/.claude/projects are readable
 (override the root with env CLAUDE_PROJECTS_DIR).
@@ -472,13 +474,18 @@ class H(BaseHTTPRequestHandler):
 
 
 def main(argv):
+    if "-h" in argv or "--help" in argv:
+        sys.exit(__doc__)
     port = int(argv[argv.index("--port") + 1]) if "--port" in argv else 8765
-    args = [a for k, a in enumerate(argv) if not a.startswith("-") and (k == 0 or argv[k - 1] != "--port")]
+    at = int(argv[argv.index("--at") + 1]) if "--at" in argv else None
+    args = [a for k, a in enumerate(argv) if not a.startswith("-") and (k == 0 or argv[k - 1] not in ("--port", "--at"))]
     path = resolve(args[0] if args else None).resolve()
     if not path.is_relative_to(ROOT):
         ROOTS.append(path.parent)
     srv = ThreadingHTTPServer(("127.0.0.1", port), H)
     url = f"http://127.0.0.1:{srv.server_address[1]}/?path={quote(str(path))}"
+    if at is not None:
+        url += f"&at={at}"
     print(f"ctxview on {url}  (Ctrl+C to stop)", flush=True)
     if "--no-open" not in argv:
         webbrowser.open(url)

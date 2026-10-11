@@ -47,11 +47,14 @@ def window_at(recs, n):  # Python port of index.html windowAt, without the kept-
 
 def main():
     env = dict(os.environ, CLAUDE_PROJECTS_DIR=str(FIX), PYTHONIOENCODING="utf-8")
-    srv = subprocess.Popen([sys.executable, str(HERE / "ctxview.py"), str(SAMPLE), "--port", "0", "--no-open"],
+    assert "--at LINE" in subprocess.run([sys.executable, str(HERE / "ctxview.py"), "--help"], capture_output=True, text=True, timeout=10).stderr
+    srv = subprocess.Popen([sys.executable, str(HERE / "ctxview.py"), str(SAMPLE), "--port", "0", "--at", "11", "--no-open"],
                            env=env, stdout=subprocess.PIPE, text=True)
     live = FIX / "live-test.jsonl"
     try:
-        port = int(srv.stdout.readline().split("127.0.0.1:")[1].split("/")[0])
+        first = srv.stdout.readline()
+        assert "&at=11" in first, first
+        port = int(first.split("127.0.0.1:")[1].split("/")[0])
         P = quote(str(SAMPLE))
 
         code, s = get(port, f"/api/session?path={P}&since=0")
