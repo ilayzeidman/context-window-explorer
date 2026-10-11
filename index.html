@@ -141,6 +141,7 @@ input[type=range]::-moz-range-thumb { width: 12px; height: 12px; border-radius: 
 .tag { font-size: 13px; color: var(--faint); white-space: nowrap; }
 .dl + .pv { padding-left: 54px; }
 .pv { font-size: var(--small); color: var(--mute); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.full mark { background: #FFD54F; outline: 2px solid #E65100; color: inherit; }
 .full { margin: 6px 0 4px; max-height: 300px; overflow: auto; background: #F7F7F4; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font: 13px/1.45 var(--mono); white-space: pre-wrap; word-break: break-word; color: #2C2F33; cursor: text; }
 .empty { color: var(--mute); padding: 14px; font-size: var(--small); }
 
@@ -492,7 +493,8 @@ async function load(path, push) {
     if (!S.recs.length) { S.meta = null; return showStatus('<h2>This session file is empty</h2>Nothing has been written yet. Turn on live tail after it starts, or pick another session.', false, true); }
     derive(); storyStops();
     S.p = last(); S.follow = true;
-    const at = new URLSearchParams(location.search).get('at');  // ?at=LINE opens on that file line, its text shown
+    const q = new URLSearchParams(location.search), at = q.get('at');  // ?at=LINE opens on that file line, its text shown
+    S.mark = push ? null : q.get('mark');  // &mark=TEXT||TEXT highlights phrases in that record
     const k = !push && at != null ? S.recs.findIndex(r => r.i >= +at) : -1;
     if (k >= 0) { S.p = k; S.follow = false; }
     showMain();
@@ -733,7 +735,9 @@ function kindLabel(r) {
 function fullText(r) {
   if (!S.open.has(r.i)) return '';
   const t = S.texts.get(r.i);
-  return `<pre class="full">${t == null ? 'Loading...' : esc(t)}</pre>`;
+  let h = t == null ? 'Loading...' : esc(t);
+  if (t != null && S.mark) for (const q of S.mark.split('||').map(esc)) if (q) h = h.replace(q, `<mark>${q}</mark>`);
+  return `<pre class="full">${h}</pre>`;
 }
 const pv = r => S.text && r.preview ? `<div class="pv">${esc(r.preview)}</div>` : '';
 // scroll only the list (scrollIntoView would also move the page)
@@ -775,6 +779,8 @@ function renderWin() {
   $('#wcount').textContent = `${num(w.rows.length)} records · ~${fmt(w.est)} itemised`;
   const sel = el.querySelector('.sel');
   if (sel) reveal(el, sel); else el.scrollTop = el.scrollHeight;
+  const m = sel && sel.querySelector('mark');
+  if (m) { const pre = m.closest('pre'); pre.scrollTop += m.getBoundingClientRect().top - pre.getBoundingClientRect().top - 40; }
 }
 
 async function toggleRow(p) {

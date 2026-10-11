@@ -16,11 +16,12 @@ python ctxview.py 2632af7a        # by session id prefix, searched across ~/.cla
 python ctxview.py path/to/x.jsonl  # its folder becomes readable too
 ```
 
-Python 3.9+, standard library only. Opens `http://127.0.0.1:8765`. Options: `--port N`, `--no-open`.
+Python 3.9+, standard library only. Opens `http://127.0.0.1:8765`. Options: `--port N`, `--at LINE`, `--no-open`.
 
 ## What you can do
 
 - Scrub the timeline. Use the arrow keys to step one record and `[` `]` to jump between events.
+- Link to a moment: `?path=<file>&at=<line>&mark=<text>` opens that record with its text showing and the text highlighted (`||` separates several). `--at LINE` does the same from the command line.
 - Click a marker to get a card explaining it: nested CLAUDE.md, a big tool output saved to disk, a subagent, a
   compaction (before and after), `/clear`, `/model`, a skill call, or a gap that let the cache go cold.
 - Open a subagent's own file in the same view.
