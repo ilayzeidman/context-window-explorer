@@ -492,9 +492,11 @@ async function load(path, push) {
     if (!S.recs.length) { S.meta = null; return showStatus('<h2>This session file is empty</h2>Nothing has been written yet. Turn on live tail after it starts, or pick another session.', false, true); }
     derive(); storyStops();
     S.p = last(); S.follow = true;
-    const at = new URLSearchParams(location.search).get('at');  // ?at=LINE opens on that file line
-    if (!push && at != null) { const k = S.recs.findIndex(r => r.i >= +at); if (k >= 0) { S.p = k; S.follow = false; } }
+    const at = new URLSearchParams(location.search).get('at');  // ?at=LINE opens on that file line, its text shown
+    const k = !push && at != null ? S.recs.findIndex(r => r.i >= +at) : -1;
+    if (k >= 0) { S.p = k; S.follow = false; }
     showMain();
+    if (k >= 0) toggleRow(k);
     if (S.live) startPoll();
   } catch (e) {
     if (gen !== S.gen) return;
