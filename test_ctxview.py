@@ -96,6 +96,13 @@ def main():
         assert ag["agent"]["toolUseId"] == "tu2" and ag["total"] == 4
         assert get(port, f"/api/file?path={quote(sub[0]['path'])}")[0] == 200
 
+        # skill listings (full vs delta) and a SKILL.md read as a file instead of through the Skill tool
+        sk = {r["uuid"]: r for r in get(port, f"/api/session?path={quote(str(FIX / 'skills.jsonl'))}")[1]["records"]}
+        assert sk["k0"]["initial"] is True and sk["k1"]["initial"] is False and sk["k0"]["ev"] == ["skill_listing"]
+        assert sk["k2"]["ev"] == ["skill_read"] and sk["k2"]["skill"] == "senza-connection"
+        assert sk["k3"]["ev"] == ["skill_read"] and sk["k3"]["skill"] == "demo"
+        assert sk["k4"]["ev"] == [] and sk["k5"]["ev"] == ["skill"] and sk["k5"]["skill"] == "demo"
+
         sessions = get(port, "/api/sessions?q=latest")[1]
         assert isinstance(sessions, list)
 

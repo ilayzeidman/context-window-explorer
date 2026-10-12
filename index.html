@@ -130,7 +130,7 @@ input[type=range]::-moz-range-thumb { width: 12px; height: 12px; border-radius: 
 .row:hover { background: #F5F5F1; }
 .row.sel { background: #FBEFE8; }
 .row.cur { background: #EEF4F9; }
-.rl { display: grid; grid-template-columns: minmax(0, 1fr) auto 72px; gap: 12px; align-items: center; font-size: var(--row); }
+.rl { display: grid; grid-template-columns: minmax(0, 1fr) auto auto 72px; gap: 12px; align-items: center; font-size: var(--row); }
 .dl { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; gap: 10px; align-items: center; font-size: var(--row); }
 .dl .ix { color: var(--faint); text-align: right; font-size: 13px; }
 .k { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -296,7 +296,7 @@ const view = s => Object.assign({}, s, {gap: (s.gap || 0) + (s.under || 0), unde
 const TAG = {
   instructions: 'Instructions loaded', skill_listing: 'Skill listing', nested_memory: 'Nested CLAUDE.md', edited_file: 'File edited on disk',
   persisted: 'Big tool output persisted', subagent: 'Subagent', compact: 'Compaction', handoff: '/handoff', clear: '/clear', model: '/model switch',
-  skill: 'Skill invoked', invoked_skills: 'Skill bodies re-injected', gap5: 'Gap over 5 min', gap60: 'Gap over 1 h',
+  skill: 'Skill invoked', skill_read: 'Skill read directly (not via Skill tool)', invoked_skills: 'Skill bodies re-injected', gap5: 'Gap over 5 min', gap60: 'Gap over 1 h',
 };
 const BOOK_NOTE = 'The file keeps everything. The model only sees the page.';
 const TAKE = {
@@ -311,6 +311,7 @@ const TAKE = {
   clear: 'Nothing from the old chat comes along. CLAUDE.md, MEMORY.md and skills load fresh.',
   model: 'Switching models mid-session pays to write the whole history to cache again (expected, not verified).',
   skill: 'Many skills cost little until used. Each one used costs again after every compaction.',
+  skill_read: 'Load skills with the Skill tool. A cat of SKILL.md is just tool output: gone after compaction.',
   gap: 'Long breaks make the next request pay full price for the whole window.',
 };
 const USE = [
@@ -321,11 +322,11 @@ const USE = [
   [5, '/compact', ['compact', 'handoff']],
   [6, '/clear', ['clear']],
   [7, 'Cache', ['gap60', 'gap5', 'model']],
-  [8, 'Skills', ['skill', 'invoked_skills', 'skill_listing']],
+  [8, 'Skills', ['skill', 'invoked_skills', 'skill_listing', 'skill_read']],
 ];
 const CH = {};  // tag -> first chapter that covers it (the number on its marker)
 for (const [n, , tags] of USE) for (const t of tags) CH[t] = CH[t] || n;
-const PRIO = ['compact', 'clear', 'subagent', 'persisted', 'model', 'handoff', 'nested_memory', 'skill', 'invoked_skills', 'instructions', 'skill_listing', 'edited_file'];
+const PRIO = ['compact', 'clear', 'subagent', 'persisted', 'model', 'handoff', 'nested_memory', 'skill', 'skill_read', 'invoked_skills', 'instructions', 'skill_listing', 'edited_file'];
 const SENT = new Set(['user', 'assistant', 'attachment', 'system']);
 const DISK_ROWS = 150;
 
@@ -580,7 +581,7 @@ function render() {
   $('#range').max = last();
   $('#range').value = p;
   let t = p; while (t > 0 && !S.recs[t].ts) t--;  // bookkeeping records carry no timestamp
-  $('#posl').textContent = `line ${r.i} · ${when(S.recs[t].ts)}`;
+  $('#posl').textContent = `line ${r.i + 1} · ${when(S.recs[t].ts)}`;
   $('#now').hidden = !(S.live && p < last());
   renderHeader(); renderStrip(); moveCursor(); markSel(); stepOn();
   if (S.tab === 'window') { if (S.book) renderDisk(); renderWin(); renderCard(); } else renderCache();
@@ -663,7 +664,7 @@ function renderMarks() {
     const tags = [...new Set(c.items.map(m => m.tag))], top = PRIO.find(x => tags.includes(x)) || tags[0];
     c.top = c.items.find(m => m.tag === top);
     const x = c.x, y = 12, more = c.items.length > 1;
-    const tip = esc(c.items.slice(0, 12).map(m => `${TAG[m.tag]} (line ${S.recs[m.p].i})`).join('\n') + (c.items.length > 12 ? `\n+${c.items.length - 12} more` : ''));
+    const tip = esc(c.items.slice(0, 12).map(m => `${TAG[m.tag]} (line ${S.recs[m.p].i + 1})`).join('\n') + (c.items.length > 12 ? `\n+${c.items.length - 12} more` : ''));
     const shape = top === 'compact' ? `<rect class="mk" x="${x - 7.5}" y="${y - 7.5}" width="15" height="15" transform="rotate(45 ${x} ${y})"/>`
       : top === 'clear' ? `<rect class="mk" x="${x - 9}" y="${y - 9}" width="18" height="18" rx="2"/>`
       : `<circle class="mk" cx="${x}" cy="${y}" r="10"/>`;
@@ -739,6 +740,13 @@ function fullText(r) {
   if (t != null && S.mark) for (const q of S.mark.split('||').map(esc)) if (q) h = h.replace(q, `<mark>${q}</mark>`);
   return `<pre class="full">${h}</pre>`;
 }
+async function textFor(r) {  // the full text a row shows when opened; cached the same way
+  const path = S.path;
+  if (S.texts.has(r.i)) return S.texts.get(r.i);
+  const t = (await api('/api/text?path=' + enc(path) + '&i=' + r.i)).text;
+  if (S.path === path) S.texts.set(r.i, t);
+  return t;
+}
 const pv = r => S.text && r.preview ? `<div class="pv">${esc(r.preview)}</div>` : '';
 // scroll only the list (scrollIntoView would also move the page)
 function reveal(list, row) {
@@ -754,7 +762,7 @@ function renderDisk() {
   for (let k = lo; k <= p; k++) {
     const r = S.recs[k], why = diskOnlyReason(r, w), tag = why === 'sidechain' || why === 'off the chain' ? why : '';
     out.push(`<div class="row${why ? ' off' : ''}${k === p ? ' cur' : ''}${S.sel && S.sel.p === k ? ' sel' : ''}" data-p="${k}"${why ? '' : ` style="--c:${CC[r.cat] || CC.messages}"`}>
-      <div class="dl"><span class="ix">${r.i}</span><span class="k">${esc(kindLabel(r))}</span><span class="tag">${tag}</span></div>${pv(r)}${fullText(r)}</div>`);
+      <div class="dl"><span class="ix">${r.i + 1}</span><span class="k">${esc(kindLabel(r))}</span><span class="tag">${tag}</span></div>${pv(r)}${fullText(r)}</div>`);
   }
   const el = $('#disk');
   el.innerHTML = out.join('');
@@ -771,7 +779,7 @@ function renderWin() {
     const c = CC[r.cat] || CC.messages;
     const kept = w.boundary && r._p < w.boundary._p ? ' <span class="tag">kept verbatim</span>' : '';
     out.push(`<div class="row${S.sel && S.sel.p === r._p ? ' sel' : ''}" data-p="${r._p}" style="--c:${c}">
-      <div class="rl"><span class="k">${esc(kindLabel(r))}${kept}</span><span class="tk">+${fmt(r.tok)}</span><span class="mini"><i style="width:${Math.max(2, (r.tok || 0) / max * 100)}%;background:${c}"></i></span></div>${pv(r)}${fullText(r)}</div>`);
+      <div class="rl"><span class="k">${esc(kindLabel(r))}${kept}</span><span class="tag" title="line in the file">L${r.i + 1}</span><span class="tk">+${fmt(r.tok)}</span><span class="mini"><i style="width:${Math.max(2, (r.tok || 0) / max * 100)}%;background:${c}"></i></span></div>${pv(r)}${fullText(r)}</div>`);
   }
   if (!w.rows.length) out.push('<div class="empty">Nothing in the window yet at this point.</div>');
   const el = $('#win');
@@ -854,7 +862,7 @@ async function renderCard() {
     clearTimeout(slow);
   }
   if (seq !== cardSeq || html == null) return;
-  if (sel && sel.cluster) html += `<div class="also">Also here: ${sel.cluster.map((m, k) => `<button data-ck="${k}">${esc(TAG[m.tag])} · line ${S.recs[m.p].i}</button>`).join('')}</div>`;
+  if (sel && sel.cluster) html += `<div class="also">Also here: ${sel.cluster.map((m, k) => `<button data-ck="${k}">${esc(TAG[m.tag])} · line ${S.recs[m.p].i + 1}</button>`).join('')}</div>`;
   el.innerHTML = html;
 }
 $('#card').addEventListener('click', e => {
@@ -867,21 +875,37 @@ $('#card').addEventListener('toggle', e => { if (e.target.matches('details.det')
 
 async function cardFor(sel) {
   const p = sel.p, r = S.recs[p], tag = sel.tag, n = nextUsage(p);
-  const nu = n ? n.u : null, rec = ['Record', `line ${r.i}, ${esc(kindLabel(r))}`];
+  const nu = n ? n.u : null, rec = ['Record', `line ${r.i + 1}, ${esc(kindLabel(r))}`];
   const cache = dl([['Next request', nu ? `${fmt(total(nu))} tokens` : 'none in file'], nu && ['Read from cache', fmt(nu.cr)], nu && ['Written to cache', fmt(nu.cw)], rec]);
   switch (tag) {
     case 'instructions': case 'skill_listing': {
       const atLaunch = p < (S.reqs[0] ?? Infinity);  // before the first request; -p sessions write the prompt before the launch attachments
+      const reload = S.markers.some(m => m.tag === 'compact' && m.p < p), update = tag === 'skill_listing' && r.initial === false;
       const d = dl([['This record', `~${fmt(r.tok)} tokens est`], ['Next request', nu ? `${fmt(total(nu))} tokens (API usage)` : '-'], rec]);
-      return atLaunch
+      let extra = '';
+      if (tag === 'skill_listing') {  // "- name: description" or a bare "- name"
+        const t = await textFor(r), named = [], desc = [];
+        for (const l of t.split('\n')) { const m = /^- (\S+?): (.*)$/.exec(l); if (m) desc.push([m[1], m[2].length]); else if (l.startsWith('- ')) named.push(l.slice(2).trim()); }
+        desc.sort((a, b) => b[1] - a[1]);
+        const all = named.length + desc.length;
+        extra = `<p class="l"><b>${num(all)} skill${all === 1 ? '' : 's'}</b>: ${num(named.length)} of ${num(all)} name-only, ${num(desc.length)} with a description · ${num(t.length)} chars</p>` +
+          (named.length ? `<p class="note"><b>Name only (${named.length})</b><br>${esc(named.join(', '))}</p>` : '') +
+          (desc.length ? `<p class="note"><b>With description (${desc.length}), longest first</b></p>` + dl(desc.map(([k, c]) => [k, num(c) + ' chars'])) : '');
+      }
+      const what = tag === 'skill_listing' ? 'Skill listing' : 'Instructions';
+      return update
+        ? card({title: 'Skill listing update', l1: 'Only the skills added since the last listing.', l2: 'Earlier listings stay in the window; this one adds to them.', n: plus(r.tok), api: false, extra, take: TAKE.skill, details: d})
+        : atLaunch
         ? card({title: 'Loaded before you type', l1: 'CLAUDE.md, MEMORY.md and the skill listing ride in the first request.', l2: 'None of it shows in your terminal.',
-          n: firstReq() != null ? `${fmt(firstReq())} <small>first request</small>` : plus(r.tok), api: firstReq() != null ? true : false, take: TAKE.launch, details: d})
-        : card({title: 'Re-loaded after compaction', l1: 'Instructions are re-read from disk.', l2: 'Edits made since launch apply now.', n: plus(r.tok), api: false, take: TAKE.launch, details: d});
+          n: firstReq() != null ? `${fmt(firstReq())} <small>first request</small>` : plus(r.tok), api: firstReq() != null ? true : false, extra, take: TAKE.launch, details: d})
+        : reload
+        ? card({title: 'Re-loaded after compaction', l1: tag === 'skill_listing' ? 'The skill listing is sent again.' : 'Instructions are re-read from disk.', l2: 'Edits made since launch apply now.', n: plus(r.tok), api: false, extra, take: TAKE.launch, details: d})
+        : card({title: `${what} arrives mid-session`, l1: 'The first request went out without it; no compaction came before.', l2: 'From here on it rides in every request.', n: plus(r.tok), api: false, extra, take: TAKE.launch, details: d});
     }
     case 'nested_memory': {
       const rows = windowAt(p).rows, k = rows.indexOf(r), prev = rows.slice(0, k < 0 ? rows.length : k).reverse().find(x => x.cat === 'tool_results');
       return card({title: 'Nested CLAUDE.md', l1: 'Entered right after a Read in its folder, not at launch.', l2: 'Gone after the next /compact, until the next Read.',
-        n: plus(r.tok), api: false, take: TAKE.nested_memory, details: dl([['File', esc(r.preview)], ['Arrived after', esc(prev ? `line ${prev.i}, ${kindLabel(prev)}` : '-')], rec])});
+        n: plus(r.tok), api: false, take: TAKE.nested_memory, details: dl([['File', esc(r.preview)], ['Arrived after', esc(prev ? `line ${prev.i + 1}, ${kindLabel(prev)}` : '-')], rec])});
     }
     case 'edited_file':
       return /CLAUDE\.md$/i.test(r.preview || '')
@@ -946,8 +970,15 @@ async function cardFor(sel) {
       // the body is the skills record that follows the Skill call and its result
       const body = tag === 'skill' ? S.recs.slice(p + 1, p + 6).find(x => x.cat === 'skills') : null;
       return tag === 'skill'
-        ? card({title: 'Skill: ' + (r.skill || ''), l1: 'Until now only its one-line listing was in the window.', l2: 'The body enters now.', n: plus(body ? body.tok : r.tok), api: false, take: TAKE.skill, details: dl([rec, body && ['Body', `line ${body.i}`]])})
+        ? card({title: 'Skill: ' + (r.skill || ''), l1: 'Until now only its one-line listing was in the window.', l2: 'The body enters now.', n: plus(body ? body.tok : r.tok), api: false, take: TAKE.skill, details: dl([rec, body && ['Body', `line ${body.i + 1}`]])})
         : card({title: 'Skill bodies re-injected', l1: 'Called skills come back after compaction.', l2: 'They cost their tokens again.', n: plus(r.tok), api: false, take: TAKE.skill, details: dl([rec])});
+    }
+    case 'skill_read': {
+      const res = S.recs.slice(p + 1, p + 6).find(x => x.cat === 'tool_results');
+      return card({title: 'Skill read directly: ' + (r.skill || ''), l1: 'Not the regular skill loading: SKILL.md was read as a file (Bash/Read), not via the Skill tool.',
+        l2: 'The body arrives as a tool result, is not tracked as an invoked skill, and is not re-injected after compaction.',
+        n: res ? plus(res.tok) + ' <small>tool result</small>' : null, api: res ? false : null, take: TAKE.skill_read,
+        details: dl([['Skill', esc(r.skill || '-')], rec, res && ['Result', `line ${res.i + 1}, ~${fmt(res.tok)} tokens (whole output, may hold more than SKILL.md)`]])});
     }
     case 'gap5': case 'gap60':
       return tag === 'gap5'
@@ -962,7 +993,7 @@ async function cardFor(sel) {
         sidechain: 'Sidechain record (a subagent branch): not in the main window.', 'off the chain': 'Not on the current parentUuid chain: before the last compaction, or on another branch.'};
       return card({title: kindLabel(r), l1: why ? 'On disk only.' : 'In the window.', l2: why ? WHY[why] : 'Sent with the next request.',
         n: why ? null : plus(r.tok), api: why ? null : false, take: BOOK_NOTE,
-        details: dl([['Line', r.i], ['Type', esc(r.type + (r.subtype ? '/' + r.subtype : '') + (r.att ? '/' + r.att : ''))], ['Size', r.bytes + ' bytes'], ['Tokens', `~${fmt(r.tok)} est`]])});
+        details: dl([['Line', r.i + 1], ['Type', esc(r.type + (r.subtype ? '/' + r.subtype : '') + (r.att ? '/' + r.att : ''))], ['Size', r.bytes + ' bytes'], ['Tokens', `~${fmt(r.tok)} est`]])});
     }
   }
 }
@@ -1006,7 +1037,7 @@ $('#cache').addEventListener('mousemove', e => {
   const j = cacheHit(e), tip = $('#tip');
   if (j < 0) { tip.hidden = true; return; }
   const r = S.recs[S.reqs[j]], u = r.usage, wrap = $('.cachewrap').getBoundingClientRect();
-  tip.innerHTML = `request ${j + 1}, line ${r.i}<br>${r.ts ? esc(new Date(r.ts).toLocaleTimeString()) + '<br>' : ''}total ${fmt(total(u))}<br>cache read ${fmt(u.cr)}<br>cache write ${fmt(u.cw)}<br>input ${fmt(u.in)}<br>output ${fmt(u.out)}`;
+  tip.innerHTML = `request ${j + 1}, line ${r.i + 1}<br>${r.ts ? esc(new Date(r.ts).toLocaleTimeString()) + '<br>' : ''}total ${fmt(total(u))}<br>cache read ${fmt(u.cr)}<br>cache write ${fmt(u.cw)}<br>input ${fmt(u.in)}<br>output ${fmt(u.out)}`;
   tip.hidden = false;
   const x = e.clientX - wrap.left;
   tip.style.left = Math.min(x + 14, wrap.width - 170) + 'px'; tip.style.top = Math.min(e.clientY - wrap.top + 12, wrap.height - 140) + 'px';

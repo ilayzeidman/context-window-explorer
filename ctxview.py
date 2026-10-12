@@ -247,7 +247,7 @@ def slim(r, names, path, by_tool):
     m = r.get("message") or {}
     c = m.get("content")
     k = kind(r, names) if t in SENT else t
-    ev, cmd, pers, link, skill, model, cat = [], None, None, None, None, None, None
+    ev, cmd, pers, link, skill, model, cat, sread = [], None, None, None, None, None, None, None
     sdir = path.parent / path.stem / "subagents"
     if t == "user":
         s = c if isinstance(c, str) else text_of(c)
@@ -277,14 +277,23 @@ def slim(r, names, path, by_tool):
         model = m.get("model") if m.get("model") != "<synthetic>" else None
         for b in c if isinstance(c, list) else []:
             if isinstance(b, dict) and b.get("type") == "tool_use":
+                inp = b.get("input") or {}
+                # a SKILL.md read as a file: the body comes back as a tool result, not as an invoked skill
+                hit = re.search(r"\b(?:cat|head|tail|sed|less|more|bat|awk|grep|type|Get-Content)\b[^|;&\n]*?([^\s/\\'\"*]+)[/\\]SKILL\.md", str(inp.get("command") or "")) \
+                    if b.get("name") == "Bash" else re.search(r"([^/\\]+)[/\\]SKILL\.md$", str(inp.get("file_path") or "")) if b.get("name") == "Read" else None
                 if b.get("name") == "Skill":
-                    skill = (b.get("input") or {}).get("skill")
+                    skill = inp.get("skill")
+                elif hit:
+                    sread = hit.group(1)
                 elif b.get("name") in ("Agent", "Task") and b.get("id") in by_tool:
                     aid, meta = by_tool[b["id"]]
                     link = {"id": aid, "path": str(sdir / f"agent-{aid}.jsonl"), "agentType": meta.get("agentType"),
                             "description": meta.get("description")}
         if skill:
             ev.append("skill")
+        elif sread:
+            skill = sread
+            ev.append("skill_read")
     elif t == "attachment":
         cat = "instructions" if at in ("instructions", "nested_memory") else "skills" if at in ("skill_listing", "invoked_skills") \
             else "reminders" if r.get("rendered") else None
@@ -309,7 +318,7 @@ def slim(r, names, path, by_tool):
             "tonly": bool(r.get("isVisibleInTranscriptOnly")), "tok": tokens(r),
             "bytes": r["_n"], "kind": k, "cat": cat, "preview": preview(r, 120), "ts": r.get("timestamp"),
             "usage": usage(u) if u else None, "model": model, "cmd": cmd, "cm": cm, "persisted": pers, "agentLink": link,
-            "skill": skill, "ev": ev}
+            "skill": skill, "ev": ev, "initial": a.get("isInitial")}  # initial: False on a skill_listing that only adds skills
 
 
 def parse(path):
