@@ -7,6 +7,7 @@
 Serves index.html and a read-only JSON API on 127.0.0.1. Only files under ~/.claude/projects are readable
 (override the root with env CLAUDE_PROJECTS_DIR).
 """
+import hashlib
 import json
 import os
 import re
@@ -207,6 +208,198 @@ def compacts(recs):  # cmd_compacts, returning rows; recs only needs the 40 reco
     return out
 
 
+# ---- the real request: Claude Code 2.1.325+ writes a copy of every API request into the session file ----
+
+CATS = ("system", "tools", "tool_additions", "instructions", "skills", "reminders", "messages", "tool_results", "summary")
+REQ_KIND = {"api-request-shape": "request copy: shape", "api-request-blob": "request copy: blob", "api-request": "request copy: request"}
+
+
+def mhash(msg):
+    return hashlib.sha256(json.dumps(msg, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
+
+
+def head_of(s):  # how a rendered attachment is found inside a request block: its first 120 chars, wrapper removed
+    return s.strip().removeprefix("<system-reminder>").removesuffix("</system-reminder>").strip()[:120]
+
+
+def scrub(x):  # image data replaced, the rest as is
+    if isinstance(x, dict):
+        return {k: "[image]" if k == "source" and x.get("type") == "image" else scrub(v) for k, v in x.items()}
+    return [scrub(v) for v in x] if isinstance(x, list) else x
+
+
+def nimg(x):
+    if isinstance(x, dict):
+        return (x.get("type") == "image") + sum(nimg(v) for v in x.values())
+    return sum(nimg(v) for v in x) if isinstance(x, list) else 0
+
+
+def btext(b):  # /api/block: text blocks as text, the rest as JSON without image data
+    return b.get("text") or "" if b.get("type") == "text" else json.dumps(scrub(b), ensure_ascii=False, indent=1)
+
+
+def plain(b):  # the counted part of a block: text, thinking without its signature, tool input; never image data
+    t = b.get("type")
+    if t in ("text", "thinking"):
+        return b.get(t) or ""
+    if t == "image":
+        return ""
+    if t == "tool_use":
+        return str(b.get("name")) + json.dumps(b.get("input"), ensure_ascii=False)
+    if t == "tool_result":
+        co = b.get("content")
+        return co if isinstance(co, str) else "".join(plain(x) for x in co or [] if isinstance(x, dict))
+    return json.dumps(scrub(b), ensure_ascii=False)
+
+
+def spans(s, heads):
+    """a system-role text holds many reminders back to back: cut it where each rendered attachment starts"""
+    hits = sorted((at, cat, i) for h, (cat, i) in heads.items() if (at := s.find(h)) >= 0)
+    out, pos, cur = [], 0, ("reminders", None)
+    for at, cat, i in hits + [(len(s), None, None)]:
+        if at > pos:
+            out.append([cur[0], at - pos, cur[1]])
+        pos, cur = at, (cat, i)
+    return out or [["reminders", 0, None]]
+
+
+def blocks_of(msg, heads, summary):
+    role, out = msg.get("role"), []
+    co = msg.get("content")
+    for b in co if isinstance(co, list) else [{"type": "text", "text": co}] if isinstance(co, str) else []:
+        b = b if isinstance(b, dict) else {"type": "text", "text": str(b)}
+        t, s = b.get("type"), plain(b)
+        if t == "text" and role == "system":
+            split = spans(s, heads)
+        else:
+            cat, src = {"image": "images", "tool_result": "tool_results", "tool_addition": "tool_additions"}.get(t, "messages"), None
+            if t == "text" and role == "user":
+                cat, src = heads.get(head_of(s)) or ("summary" if summary else "skills" if s.startswith("Base directory for this skill")
+                                                     else "messages", None)
+            split = [[cat, len(s), src]]
+        out.append({"type": t, "chars": len(s), "cat": max(split, key=lambda x: x[1])[0], "head": (s or btext(b))[:80],
+                    "split": split, "images": nimg(b)})
+    return out
+
+
+def message(p, c, h):
+    """(message, from, k) for a tail hash: a blob, the response to a request, a user record, or missing"""
+    if h in c["blobs"]:
+        k = c["blobs"][h]
+        return full(p, c, k).get("message") or {}, "blob", k
+    if h in c["ah"]:
+        ks = c["ah"][h]
+        return {"role": "assistant", "content": [b for k in ks for b in full(p, c, k)["message"].get("content") or []]}, "response", ks[0]
+    if h in c["urec"]:
+        k = c["urec"][h]
+        co = full(p, c, k)["message"].get("content")
+        return {"role": "user", "content": co if isinstance(co, list) else [{"type": "text", "text": co}]}, "record", k
+    return None, "missing", None
+
+
+def shape(p, c, sh):
+    if sh not in c["shapes"]:
+        return None
+    if sh not in c["sm"]:
+        k = c["shapes"][sh]
+        s = full(p, c, k).get("shape") or {}
+        c["sm"][sh] = {"i": c["recs"][k]["i"], "system": [(len(plain(b)), plain(b)[:80]) for b in s.get("system") or []],
+                       "tools": [(b.get("name"), len(json.dumps(b, ensure_ascii=False))) for b in s.get("tools") or []]}
+    return c["sm"][sh]
+
+
+def apportion(chars_by, images, total, cpt):
+    """parts = chars / cpt, images 1,600 each; largest remainder so the parts sum exactly to the measured total"""
+    raw = {k: v / cpt for k, v in chars_by.items()}
+    raw["images"] = 1600 * images
+    if total is None:
+        return {k: round(v) for k, v in raw.items()}
+    out = {k: int(v) for k, v in raw.items()}
+    # ponytail: assumes total > 1600*images; a request that is nearly all images would not sum exactly
+    for k in sorted(raw, key=lambda k: out[k] - raw[k])[:total - sum(out.values())]:
+        out[k] += 1
+    return out
+
+
+def requests(p, c):
+    """every api-request in the file rebuilt: messages(req) = messages(req.base)[:keep] + resolve(tail). Memo per file size."""
+    if c["built"][0] == c["off"]:
+        return c["built"][1]
+    for key, ks in c["groups"].items():  # a response: records sharing (requestRef, message.id), in apiBlockIndex order
+        if c["ahk"].get(key, (0,))[0] != len(ks):
+            ks = [k for _, k in sorted(ks)]
+            c["ahk"][key] = (len(ks), mhash({"role": "assistant", "content": [b for k in ks for b in full(p, c, k)["message"].get("content") or []]}), ks)
+    c["ah"] = {h: ks for _, h, ks in c["ahk"].values()}
+    out, by_id, prev = [], {}, 4.0
+    for n, k in enumerate(c["rq"]):
+        r = full(p, c, k)
+        keep = r.get("keep") or 0
+        base = by_id.get(r.get("base"))
+        msgs = base[1]["msgs"][:keep] if base and keep else []
+        msgs = msgs + [(None, "missing", None)] * (keep - len(msgs))
+        for h in r.get("tail") or []:
+            frm = "blob" if h in c["blobs"] else "response" if h in c["ah"] else "record" if h in c["urec"] else "missing"
+            msgs.append((h, frm, {"blob": c["blobs"], "response": c["ah"], "record": c["urec"]}.get(frm, {}).get(h)))
+        chars_by, images = dict.fromkeys(CATS, 0), 0
+        sh = shape(p, c, r.get("shapeHash"))
+        if sh:
+            chars_by["system"] = sum(x for x, _ in sh["system"])
+            chars_by["tools"] = sum(x for _, x in sh["tools"])
+        for h, frm, _ in msgs:
+            if h and c["mc"].get(h, (-1,))[0] != len(c["heads"]):
+                m = message(p, c, h)[0] or {}
+                c["mc"][h] = (len(c["heads"]), m.get("role"), blocks_of(m, c["heads"], h in c["summ"]))
+            for b in c["mc"][h][2] if h else []:
+                images += b["images"]
+                for cat, x, _ in b["split"]:
+                    if cat != "images":
+                        chars_by[cat] += x
+        rk = c["resp"].get(r.get("id"))
+        u = c["recs"][rk]["usage"] if rk is not None else None
+        total = u["in"] + u["cr"] + u["cw"] if u else None
+        chars = sum(chars_by.values())
+        cpt = chars / (total - 1600 * images) if total and chars and total > 1600 * images else prev
+        prev = cpt if total else prev
+        row = {"n": n, "i": c["recs"][k]["i"], "id": r.get("id"), "ts": r.get("timestamp"), "resp_i": c["recs"][rk]["i"] if rk is not None else None,
+               "total": total, "chars": chars, "images": images, "cpt": round(cpt, 3), "keep": keep, "msgs": len(msgs),
+               "missing": sum(f == "missing" for _, f, _ in msgs), "tokens": apportion(chars_by, images, total, cpt), "chars_by": chars_by}
+        x = {"msgs": msgs, "shape": r.get("shapeHash"), "model": (r.get("params") or {}).get("model"),
+             "cache": {tuple(cc.get("path") or []): " ".join(v for v in ((cc.get("value") or {}).get("ttl") or "5m", (cc.get("value") or {}).get("scope")) if v)
+                       for cc in r.get("cacheControl") or []}}
+        by_id[r.get("id")] = (row, x)
+        out.append((row, x))
+    c["built"] = (c["off"], out)
+    return out
+
+
+def request(p, c, n):
+    row, x = requests(p, c)[n]
+    sh, ca = shape(p, c, x["shape"]) or {"i": None, "system": [], "tools": []}, x["cache"]
+    return {"n": n, "i": row["i"], "model": x["model"], "cpt": row["cpt"], "total": row["total"], "images": row["images"],
+            "system": [{"ref": f"system.{j}", "chars": ch, "cat": "system", "cache": ca.get(("system", j)), "head": hd, "src": sh["i"]}
+                       for j, (ch, hd) in enumerate(sh["system"])],
+            "tools": [{"ref": f"tools.{j}", "name": nm, "chars": ch, "cache": ca.get(("tools", j)), "src": sh["i"]} for j, (nm, ch) in enumerate(sh["tools"])],
+            "messages": [{"idx": m, "role": c["mc"][h][1] if h else None, "from": frm, "new": m >= row["keep"],
+                          "src": c["recs"][k if isinstance(k, int) else k[0]]["i"] if k is not None else None,
+                          "blocks": [dict(b, ref=f"messages.{m}.content.{j}", cache=ca.get(("messages", m, "content", j)))
+                                     for j, b in enumerate(c["mc"][h][2] if h else [])]}
+                         for m, (h, frm, k) in enumerate(x["msgs"])]}
+
+
+def block(p, c, n, ref):
+    """full text of one block of request n; KeyError/IndexError/ValueError when the ref does not exist"""
+    _, x = requests(p, c)[n]
+    a = ref.split(".")
+    if not all(v.isdigit() for v in a[1::2]):
+        raise KeyError(ref)
+    if a[0] in ("system", "tools") and len(a) == 2:
+        return btext((full(p, c, c["shapes"][x["shape"]]).get("shape") or {})[a[0]][int(a[1])])
+    if a[0] == "messages" and len(a) == 4 and a[2] == "content":
+        m = message(p, c, x["msgs"][int(a[1])][0])[0]
+        return btext(m["content"][int(a[3])])
+    raise KeyError(ref)
+
+
 # ---- per-file cache with incremental tail reads ----
 
 CACHE, LOCK = {}, threading.Lock()  # ponytail: one global lock, per-path locks if many viewers poll big files at once
@@ -246,7 +439,7 @@ def slim(r, names, path, by_tool):
     at = a.get("type")
     m = r.get("message") or {}
     c = m.get("content")
-    k = kind(r, names) if t in SENT else t
+    k = kind(r, names) if t in SENT else REQ_KIND.get(t, t)
     ev, cmd, pers, link, skill, model, cat, sread = [], None, None, None, None, None, None, None
     sdir = path.parent / path.stem / "subagents"
     if t == "user":
@@ -321,6 +514,31 @@ def slim(r, names, path, by_tool):
             "skill": skill, "ev": ev, "initial": a.get("isInitial")}  # initial: False on a skill_listing that only adds skills
 
 
+def index(c, r, k):
+    """what requests() needs to rebuild the real request later, without keeping record bodies in memory"""
+    t, m = r["type"], r.get("message") if isinstance(r.get("message"), dict) else {}
+    if t == "api-request-shape":
+        c["shapes"][r.get("shapeHash")] = k
+    elif t == "api-request-blob":
+        c["blobs"][r.get("hash")] = k
+    elif t == "api-request":
+        c["rq"].append(k)
+    elif t == "user" and m:
+        co = m.get("content")
+        h = mhash({"role": "user", "content": co if isinstance(co, list) else [{"type": "text", "text": co}]})
+        c["urec"][h] = k
+        if r.get("isCompactSummary"):
+            c["summ"].add(h)
+    elif t == "assistant" and r.get("requestRef"):
+        c["groups"].setdefault((r["requestRef"], m.get("id")), []).append((r.get("apiBlockIndex") or 0, k))
+        c["resp"].setdefault(r["requestRef"], k)
+    elif t == "attachment":
+        for x in r.get("rendered") or []:
+            h = head_of(str(x.get("content", ""))) if isinstance(x, dict) else ""
+            if h:
+                c["heads"][h] = (c["recs"][k]["cat"], r["_i"])
+
+
 def parse(path):
     """bring the cache for path up to date: read only complete lines appended since last time, restart if the file shrank"""
     size = path.stat().st_size
@@ -328,7 +546,9 @@ def parse(path):
         first = f.read(256)  # a rewritten file of the same or larger size starts differently
     c = CACHE.get(path)
     if not c or size < c["off"] or c["first"] != first[:len(c["first"])]:
-        c = CACHE[path] = {"off": 0, "n": 0, "names": {}, "recs": [], "offs": [], "k": {}, "sid": None, "prev": None, "first": first}
+        c = CACHE[path] = {"off": 0, "n": 0, "names": {}, "recs": [], "offs": [], "k": {}, "sid": None, "prev": None, "first": first,
+                         "shapes": {}, "blobs": {}, "rq": [], "urec": {}, "summ": set(), "groups": {}, "resp": {}, "heads": {},
+                         "ahk": {}, "ah": {}, "mc": {}, "sm": {}, "built": (None, [])}
     c["first"] = first
     if size == c["off"]:
         return c
@@ -364,6 +584,7 @@ def parse(path):
             c["prev"] = {"path": str(path.parent / f"{old}.jsonl"), "id": old}
         c["k"][i] = len(c["recs"])
         c["recs"].append(slim(r, c["names"], path, by_tool))
+        index(c, r, c["k"][i])
         c["offs"].append((at, len(raw)))
     c["off"] += end
     return c
@@ -475,6 +696,28 @@ class H(BaseHTTPRequestHandler):
                         t = "\n".join(str(x.get("content", "")) for x in r.get("rendered") or [] if isinstance(x, dict)) if r["type"] == "attachment" else ""
                         t = t or json.dumps({k: v for k, v in r.items() if k != "_i"}, ensure_ascii=False, indent=1)
                     body = {"text": t[:200_000] + ("\n[truncated]" if len(t) > 200_000 else "")}
+                elif u.path == "/api/raw":  # the line exactly as on disk, not full(), which adds _i and type
+                    k = c["k"].get(int(q.get("i", -1)))
+                    if k is None:
+                        return self.send(404, {"error": "no such record"})
+                    off, n = c["offs"][k]
+                    with open(p, "rb") as f:
+                        f.seek(off)
+                        body = f.read(n).rstrip(b"\r")
+                elif u.path == "/api/requests":
+                    body = [row for row, _ in requests(p, c)]
+                elif u.path in ("/api/request", "/api/block"):
+                    n = int(q.get("n", -1))
+                    if not 0 <= n < len(requests(p, c)):
+                        return self.send(404, {"error": "no such request"})
+                    if u.path == "/api/request":
+                        body = request(p, c, n)
+                    else:
+                        try:
+                            t = block(p, c, n, q.get("ref", ""))
+                        except (KeyError, IndexError, TypeError):
+                            return self.send(404, {"error": "no such block"})
+                        body = {"text": t[:200_000] + ("\n[truncated]" if len(t) > 200_000 else "")}
                 else:
                     return self.send(404, {"error": "not found"})
             return self.send(200, body)

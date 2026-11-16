@@ -24,6 +24,8 @@ Python 3.9+, standard library only. Opens `http://127.0.0.1:8765`. Options: `--p
 - Link to a moment: `?path=<file>&at=<line>&mark=<text>` opens that record with its text showing and the text highlighted (`||` separates several). `--at LINE` does the same from the command line.
 - Click a marker to get a card explaining it: nested CLAUDE.md, a big tool output saved to disk, a subagent, a
   compaction (before and after), `/clear`, `/model`, a skill call, or a gap that let the cache go cold.
+- See a record raw: `R` (or `&raw=1`) shows open rows as the JSON line on disk, colored, with long strings folded. The fields
+  repeated on every record are greyed out.
 - Open a subagent's own file in the same view.
 - **Cache per request**: cache read, cache write and uncached input for every request.
 - **Live tail**: follow a session while Claude Code writes it.
@@ -39,6 +41,22 @@ Python 3.9+, standard library only. Opens `http://127.0.0.1:8765`. Options: `--p
     Not measured per cause.
 - After a compaction, the kept-verbatim tail is stored before the boundary. The viewer splices it back in after the
   summary (`compactMetadata.preservedSegment`).
+
+## The request as sent
+
+Claude Code 2.1.325 and later also writes a copy of every API request into the session file: a **shape** (system
+prompt + tools, written once and reused), a **blob** per new message, and a **request** record that lists which
+messages go out, in what order, with which cache marks. When a file has them:
+
+- `A` switches the middle column between "In the window" (the chain above) and "As sent": system blocks, tools, then
+  each message with its role and blocks, sizes and cache marks. Click a block for its full text.
+- The bar is drawn from that request, so there is no grey gap: system prompt, tools and tool additions get their own parts.
+- Only the total is measured (the API's count on the response). The parts are apportioned by size: the request's
+  characters divided by that total gives a chars-per-token rate for this request (images count 1,600 tokens each),
+  and each part gets its characters at that rate, rounded so the parts sum to the total. Before the response
+  arrives, the previous request's rate is used.
+
+Older files have none of these records and look exactly as before.
 
 ## Privacy
 

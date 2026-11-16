@@ -60,9 +60,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .res .s, .res .m { font-size: 13px; color: var(--mute); }
 .res .m { grid-column: 1 / -1; }
 
-/* hero + bar */
-.hero { display: flex; align-items: center; gap: 14px; font-size: calc(var(--hero) * .5); color: var(--mute); line-height: 1; }
-.hero b { font-size: var(--hero); font-weight: 600; color: var(--ink); letter-spacing: -.02em; }
+/* bar */
 .badge { display: inline-block; font-size: 13px; line-height: 1; padding: 4px 8px; border-radius: 6px; border: 1px solid #C3C4BE; color: var(--mute); vertical-align: middle; cursor: help; font-weight: 400; letter-spacing: 0; }
 .badge.api { border-color: var(--ink); color: var(--ink); }
 .stack { display: flex; height: var(--barh); background: #E4E4DF; border-radius: 10px; overflow: hidden; }
@@ -73,6 +71,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .legend { display: flex; flex-wrap: wrap; gap: 4px 20px; font-size: var(--small); color: var(--mute); }
 .legend span { display: inline-flex; align-items: center; gap: 6px; }
 .legend b { font-weight: 600; color: var(--ink); }
+.legend .tot { font-size: var(--body); color: var(--ink); margin-right: 8px; } .legend .tot b { font-size: var(--title); }
 .sw { width: 11px; height: 11px; border-radius: 3px; display: inline-block; flex: none; }
 
 /* stepper */
@@ -118,6 +117,8 @@ input[type=range]::-moz-range-thumb { width: 12px; height: 12px; border-radius: 
 @media (max-width: 1500px) {
   .cols.book { grid-template-columns: minmax(0, 58fr) minmax(0, 42fr); }
   .cols.book #wcol { display: none; }
+  .cols.book.sent #wcol { display: flex; }
+  .cols.book.sent #dcol { display: none; }
 }
 .col { display: flex; flex-direction: column; min-height: 0; }
 .col h2 { font-size: var(--small); font-weight: 600; margin: 0 0 6px; display: flex; justify-content: space-between; gap: 8px; }
@@ -138,9 +139,20 @@ input[type=range]::-moz-range-thumb { width: 12px; height: 12px; border-radius: 
 .tk { color: var(--mute); text-align: right; white-space: nowrap; font-size: var(--small); }
 .mini { height: 6px; background: var(--soft); border-radius: 3px; overflow: hidden; }
 .mini i { display: block; height: 100%; border-radius: 3px; }
+.mini.split { display: flex; } .mini.split i { border-radius: 0; flex: none; }
+.sh { padding: 8px 14px 4px; font-size: var(--row); }
+.sh b { color: var(--sel); }
+.cb { color: var(--sel); font-weight: 600; font-size: var(--small); }
+.nw { color: #00704F; font-weight: 600; font-size: var(--small); }
+#calib { font-size: var(--small); color: var(--mute); margin-top: 4px; }
 .tag { font-size: 13px; color: var(--faint); white-space: nowrap; }
 .dl + .pv { padding-left: 54px; }
 .pv { font-size: var(--small); color: var(--mute); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.full.raw { font-size: var(--row); max-height: 60vh; }
+.raw .jk { color: var(--win); } .raw .js { color: #00704F; } .raw .jp { color: var(--sel); } .raw .jx { color: var(--mute); }
+.raw .jr.key > .jk, .raw .jr.key > .js { font-weight: 700; } .raw .jr.noise, .raw .jr.noise * { color: var(--faint); }
+.raw .jlong, .raw .jfold.open .jshort { display: none; } .raw .jfold.open .jlong { display: inline; }
+.raw .jmore { color: var(--faint); cursor: pointer; text-decoration: underline dotted; }
 .full mark { background: #FFD54F; outline: 2px solid #E65100; color: inherit; }
 .full { margin: 6px 0 4px; max-height: 300px; overflow: auto; background: #F7F7F4; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font: 13px/1.45 var(--mono); white-space: pre-wrap; word-break: break-word; color: #2C2F33; cursor: text; }
 .empty { color: var(--mute); padding: 14px; font-size: var(--small); }
@@ -211,6 +223,8 @@ details.det summary { cursor: pointer; color: var(--mute); }
         <button role="tab" data-tab="cache" aria-selected="false">Cache</button>
       </span>
       <button class="btn" id="tText" aria-pressed="false">Show text<kbd>T</kbd></button>
+      <button class="btn" id="tRaw" aria-pressed="false">Raw JSON<kbd>R</kbd></button>
+      <button class="btn" id="tSent" aria-pressed="false" title="Middle column: In the window (rebuilt chain) or As sent (the request copy in the file)">As sent<kbd>A</kbd></button>
       <button class="btn" id="tBook" aria-pressed="false">Show book records<kbd>B</kbd></button>
       <button class="btn" id="live" aria-pressed="false" title="Live tail: read new records as they are written and follow the newest"><span class="d"></span>Live</button>
     </div>
@@ -224,10 +238,10 @@ details.det summary { cursor: pointer; color: var(--mute); }
   </header>
 
   <div id="main" hidden style="display:contents">
-    <div class="hero" id="hero"></div>
     <div>
       <div class="stack" id="stack" role="img"></div>
       <div class="legend" id="legend" style="margin-top:8px"></div>
+      <div id="calib" hidden></div>
     </div>
     <nav class="steps" id="steps" aria-label="Chapters"></nav>
     <section class="book">
@@ -240,7 +254,7 @@ details.det summary { cursor: pointer; color: var(--mute); }
     <div class="mainv">
       <section id="vwin" class="cols">
         <div class="col" id="dcol"><h2>On disk <b id="dcount"></b></h2><div class="list" id="disk"></div></div>
-        <div class="col" id="wcol"><h2>In the window <b id="wcount"></b></h2><div class="list" id="win"></div></div>
+        <div class="col" id="wcol"><h2><span id="wtitle">In the window</span> <b id="wcount"></b></h2><div class="list" id="win"></div></div>
         <aside class="card" id="card" aria-live="polite"></aside>
       </section>
       <section id="vcache" hidden>
@@ -258,7 +272,8 @@ details.det summary { cursor: pointer; color: var(--mute); }
     <dt>PageDown / Space</dt><dd>next story stop</dd><dt>PageUp</dt><dd>previous story stop</dd>
     <dt>1 - 8</dt><dd>chapter; again for the next occurrence</dd><dt>&larr; &rarr;</dt><dd>one record</dd>
     <dt>[ ]</dt><dd>previous / next event</dd><dt>Home / End</dt><dd>start / newest (End follows live)</dd>
-    <dt>B</dt><dd>show book records</dd><dt>T</dt><dd>show text previews</dd><dt>D</dt><dd>card details</dd>
+    <dt>B</dt><dd>show book records</dd><dt>T</dt><dd>show text previews</dd><dt>D</dt><dd>card details</dd><dt>R</dt><dd>open rows as raw JSON</dd>
+    <dt>A</dt><dd>middle column: in the window / as sent</dd>
     <dt>C</dt><dd>cache view</dd><dt>Esc</dt><dd>clear selection</dd><dt>?</dt><dd>this list</dd>
   </dl>
 </dialog>
@@ -282,14 +297,18 @@ const proj = s => String(s || '').replace(/^[A-Za-z]--/, '').split('-').filter(B
 const CATS = [
   ['gap', 'Not itemised (system prompt, tools, estimate error)', '#6B6B6B', 0],
   ['under', 'Unattributed (estimate error)', '#C9C9C4', 1],
+  ['system', 'System prompt', '#3D3F44', 0],
+  ['tools', 'Tools', '#7A7D85', 0],
+  ['tool_additions', 'Tool additions', '#B4B6BC', 1],
   ['instructions', 'Instructions', '#0072B2', 0],
   ['skills', 'Skills', '#E69F00', 1],
   ['reminders', 'Reminders', '#56B4E9', 1],
   ['summary', 'Compact summary', '#D55E00', 0],
   ['messages', 'Messages', '#009E73', 1],
   ['tool_results', 'Tool results', '#CC79A7', 1],
+  ['images', 'Images', '#F0E442', 1],
 ];
-const CC = Object.fromEntries(CATS.map(c => [c[0], c[2]]));
+const CC = Object.fromEntries(CATS.map(c => [c[0], c[2]])), CL = Object.fromEntries(CATS.map(c => [c[0], c[1]]));
 const TIP = {gap: 'API usage minus what the file itemises at 4 chars/token: the system prompt and tool definitions (not stored in the file) plus estimate error. Split under Details.'};
 // bars show system prompt + tools and the estimate error as one grey part; Details keeps the split
 const view = s => Object.assign({}, s, {gap: (s.gap || 0) + (s.under || 0), under: 0});
@@ -330,9 +349,10 @@ const PRIO = ['compact', 'clear', 'subagent', 'persisted', 'model', 'handoff', '
 const SENT = new Set(['user', 'assistant', 'attachment', 'system']);
 const DISK_ROWS = 150;
 
-const S = {path: null, meta: null, recs: [], p: 0, tab: 'window', sel: null, open: new Set(), texts: new Map(),
+const S = {path: null, meta: null, recs: [], p: 0, tab: 'window', sel: null, open: new Set(), texts: new Map(), raw: false, raws: new Map(), jopen: new Set(),
   sub: null, cmp: null, markers: [], nextReq: [], reqs: [], winCache: new Map(), ctx: 200000, firstPrompt: Infinity,
-  poll: null, polling: false, gen: 0, live: false, follow: true, book: false, text: false, details: false, stops: [], story: -1, has: []};
+  poll: null, polling: false, gen: 0, live: false, follow: true, book: false, text: false, details: false, stops: [], story: -1, has: [],
+  sent: false, rq: [], rqd: new Map(), bopen: new Set(), btext: new Map()};  // rq: /api/requests list; rqd: /api/request by n; bopen/btext: As-sent rows
 
 async function api(url) {
   const r = await fetch(url, {cache: 'no-store'});
@@ -377,7 +397,40 @@ function windowAt(p) {
   return w;
 }
 function nextUsage(p) { const q = S.nextReq[p]; return q == null ? null : {q, u: S.recs[q].usage}; }
+// the request copy for position p: the one whose response is the next usage; after the last response, the last request
+function reqAt(p) {
+  const L = S.rq; if (!L.length) return null;
+  const q = S.nextReq[p];
+  if (q != null) { const r = L.find(x => x.resp_i === S.recs[q].i); return r ? {r, next: true} : null; }
+  const r = L[L.length - 1];
+  return {r, next: S.recs[p].i < r.i};
+}
+// tokens of request r whose source records are on disk by file line `line`; null once all are (then r.tokens is exact).
+// System prompt + tools go with every request, so they count from the start.
+// ponytail: a block without its own source line counts from its message's blob line ("hi" shows at the blob, not L9)
+function soFar(r, d, line) {
+  const ch = {}, add = (c, n) => { ch[c] = (ch[c] || 0) + n; };
+  let all = true, img = 0;
+  for (const b of d.system) add('system', b.chars);
+  for (const b of d.tools) add('tools', b.chars);
+  for (const m of d.messages) for (const b of m.blocks) {
+    for (const [c, n, s] of b.split || [[b.cat, b.chars, null]]) if ((s ?? m.src) <= line) add(c, n); else all = false;
+    if (b.images && m.src <= line) img += b.images;
+  }
+  if (all) return null;
+  const t = {};
+  for (const c in r.tokens) t[c] = c === 'images' ? (r.images ? Math.round(r.tokens.images * img / r.images) : 0)
+    : r.chars_by[c] ? Math.round(r.tokens[c] * (ch[c] || 0) / r.chars_by[c]) : 0;
+  return t;
+}
+// record sizes are 4 chars/token server-side; with a request copy, rescale to that request's rate so rows match the bar
+const rate = () => { const a = reqAt(S.p); return a && a.r.cpt ? 4 / a.r.cpt : 1; };
 function catSums(p) {
+  const a = reqAt(p);
+  if (a) {
+    const r = a.r, d = getReq(r.n), part = d && !d.err ? soFar(r, d, S.recs[p].i) : null, t = part || r.tokens || {};
+    return Object.assign({}, t, {_total: part ? null : r.total, _est: Object.values(t).reduce((x, y) => x + y, 0), _req: r});
+  }
   const w = windowAt(p), n = nextUsage(p), t = n ? total(n.u) : null;
   // usage is only comparable with the window that request was built from (q - 1); no later request: use the last one
   const gapAt = q => q == null ? 0 : Math.max(0, total(S.recs[q].usage) - (q > 0 ? windowAt(q - 1).est : 0));
@@ -481,7 +534,8 @@ async function load(path, push) {
   cardSeq++;  // drop any card still being built for the old session
   stopPoll();
   Object.assign(S, {path, meta: null, recs: [], sel: null, sub: null, cmp: null, story: -1});
-  S.open.clear(); S.texts.clear(); S.winCache.clear();
+  S.open.clear(); S.texts.clear(); S.winCache.clear(); S.raws.clear(); S.jopen.clear();
+  S.rq = []; S.rqd.clear(); S.bopen.clear(); S.btext.clear();
   if (push) history.pushState({}, '', path ? '?path=' + enc(path) : location.pathname);
   closePicker();
   $('#crumbs').innerHTML = '';
@@ -496,9 +550,11 @@ async function load(path, push) {
     S.p = last(); S.follow = true;
     const q = new URLSearchParams(location.search), at = q.get('at');  // ?at=LINE opens on that file line, its text shown
     S.mark = push ? null : q.get('mark');  // &mark=TEXT||TEXT highlights phrases in that record
+    if (!push) { S.raw = q.get('raw') === '1'; $('#tRaw').setAttribute('aria-pressed', S.raw); }  // &raw=1 opens rows as raw JSON
     const k = !push && at != null ? S.recs.findIndex(r => r.i >= +at) : -1;
     if (k >= 0) { S.p = k; S.follow = false; }
     showMain();
+    loadReqs();
     if (k >= 0) toggleRow(k);
     if (S.live) startPoll();
   } catch (e) {
@@ -584,7 +640,7 @@ function render() {
   $('#posl').textContent = `line ${r.i + 1} · ${when(S.recs[t].ts)}`;
   $('#now').hidden = !(S.live && p < last());
   renderHeader(); renderStrip(); moveCursor(); markSel(); stepOn();
-  if (S.tab === 'window') { if (S.book) renderDisk(); renderWin(); renderCard(); } else renderCache();
+  if (S.tab === 'window') { if (S.book) renderDisk(); $('#wtitle').textContent = S.sent ? 'As sent' : 'In the window'; S.sent ? renderSent() : renderWin(); renderCard(); } else renderCache();
 }
 
 // segments of a stacked bar scaled to the context size; inside labels where the segment is >= 90px
@@ -599,13 +655,17 @@ function segs(s, px) {
 const badge = api => api ? '<span class="badge api" title="Next request, from API usage">API</span>'
   : '<span class="badge" title="Estimate: no later request in this file. Window estimate plus the system prompt + tools gap from the last request.">estimate</span>';
 function renderHeader() {
-  const s = catSums(S.p), t = s._total, shown = t ?? s._est;
-  $('#hero').innerHTML = `<span><b>~${fmt(shown)}</b> of ${S.ctx === 1e6 ? '1M' : '200K'} tokens in the window</span>${badge(t != null)}`;
+  const s = catSums(S.p);
   const st = $('#stack');
   st.innerHTML = segs(s, st.clientWidth);
   st.setAttribute('aria-label', 'Window by category: ' + CATS.map(([k, l]) => `${l} ${fmt(s[k] || 0)}`).join(', '));
-  const sv = view(s);
-  $('#legend').innerHTML = CATS.filter(([k]) => sv[k]).map(([k, l, c]) => `<span title="${esc(TIP[k] || l)}"><i class="sw${k === 'gap' || k === 'under' ? ' hatch' : ''}" style="background-color:${c}"></i>${esc(l)} <b>${fmt(sv[k])}</b></span>`).join('');
+  const sv = view(s), sum = CATS.reduce((x, [k]) => x + (sv[k] || 0), 0), cap = S.ctx === 1e6 ? '1M' : '200K';
+  const tot = `<span class="tot" title="${s._total != null ? 'API count for this request' : 'Parts of the next request already on disk at this line'}">Window now <b>${s._total != null ? num(s._total) : '~' + num(Math.round(sum))}</b> / ${cap} · ${Math.round(sum / S.ctx * 100)}%</span>`;
+  $('#legend').innerHTML = tot + CATS.filter(([k]) => sv[k]).map(([k, l, c]) => `<span title="${esc(TIP[k] || l)}"><i class="sw${k === 'gap' || k === 'under' ? ' hatch' : ''}" style="background-color:${c}"></i>${esc(l)} <b>${fmt(sv[k])}</b></span>`).join('');
+  const r = s._req, cpt = r && r.cpt != null ? (+r.cpt).toFixed(2) : null;
+  $('#calib').hidden = !r;
+  if (r) $('#calib').textContent = r.total != null ? `Only the total is measured (API). Parts are apportioned by size: ${cpt} chars/token on this request.`
+    : `Estimate: no response yet. Parts are apportioned by size${cpt ? ` at ${cpt} chars/token from the previous request` : ''}.`;
 }
 
 // ---------- stepper ----------
@@ -703,22 +763,27 @@ document.addEventListener('keydown', e => {
   const k = e.key, K = k.toLowerCase(), act = {
     ArrowLeft: () => setP(S.p - 1), ArrowRight: () => setP(S.p + 1), '[': () => stepMarker(-1), ']': () => stepMarker(1),
     Home: () => setP(0), End: toEnd, PageDown: () => story(1), ' ': () => story(1), PageUp: () => story(-1),
-    b: () => toggle('book'), t: () => toggle('text'), d: () => toggle('details'), c: () => setTab(S.tab === 'cache' ? 'window' : 'cache'),
+    b: () => toggle('book'), t: () => toggle('text'), r: () => toggle('raw'), a: () => toggle('sent'), d: () => toggle('details'), c: () => setTab(S.tab === 'cache' ? 'window' : 'cache'),
     Escape: () => { S.sel = null; schedule(); }, '?': () => $('#keys').showModal(),
   }[k.length === 1 ? K : k] || (/^[1-8]$/.test(k) && (() => chapter(+k)));
   if (act) { e.preventDefault(); act(); }
 });
 function toggle(f) {
   S[f] = !S[f];
-  $('#tBook').setAttribute('aria-pressed', S.book); $('#tText').setAttribute('aria-pressed', S.text);
-  $('#vwin').classList.toggle('book', S.book);
+  $('#tBook').setAttribute('aria-pressed', S.book); $('#tText').setAttribute('aria-pressed', S.text); $('#tRaw').setAttribute('aria-pressed', S.raw); $('#tSent').setAttribute('aria-pressed', S.sent);
+  $('#vwin').classList.toggle('book', S.book); $('#vwin').classList.toggle('sent', S.sent);
+  if (f === 'raw') { const q = new URLSearchParams(location.search); S.raw ? q.set('raw', '1') : q.delete('raw'); history.replaceState(history.state, '', '?' + q); }
   schedule();
 }
 $('#tBook').onclick = () => toggle('book');
 $('#tText').onclick = () => toggle('text');
+$('#tRaw').onclick = () => toggle('raw');
+$('#tSent').onclick = () => toggle('sent');
 
 // ---------- lists ----------
+const REQCOPY = {'api-request-shape': 'shape', 'api-request-blob': 'blob', 'api-request': 'request'};
 function diskOnlyReason(r, w) {
+  if (REQCOPY[r.type]) return 'request copy';
   if (!SENT.has(r.type)) return 'bookkeeping';
   if (r.type === 'system') return 'system';
   if (r.type === 'attachment' && !r.rendered) return 'unrendered';
@@ -731,10 +796,49 @@ function kindLabel(r) {
   const k = r.kind || r.type || '', m = /^(tool call|tool result): (.+)$/.exec(k);
   if (m) return m[2] + (m[1] === 'tool call' ? ' call' : ' result');
   if (k === 'you') return 'You';
+  if (REQCOPY[r.type]) return `Request copy (${REQCOPY[r.type]})`;
   return k.charAt(0).toUpperCase() + k.slice(1);
 }
+// ---------- raw JSON ----------
+// ponytail: renders via JSON.parse, so integer-like keys move first and ints above 2^53 round; a byte-exact tokenizer if a session ever has them
+const NOISE = new Set(['cwd', 'version', 'gitBranch', 'userType', 'entrypoint', 'sessionId', 'session_id', 'isSidechain']);
+const CHAIN = new Set(['type', 'uuid', 'parentUuid']);
+const markIn = h => { if (S.mark) for (const q of S.mark.split('||').map(esc)) if (q) h = h.split(q).join(`<mark>${q}</mark>`); return h; };
+function rawHtml(v, ind, ids, top) {
+  if (typeof v === 'string') {
+    const j = JSON.stringify(v), hit = S.mark && S.mark.split('||').some(q => q && v.includes(q));
+    if (j.length <= 300 || hit) return `<span class="js">${markIn(esc(j))}</span>`;
+    const k = ids.pre + ids.n++;  // long string: first 160 chars, click to expand
+    return `<span class="jfold" data-k="${k}"><span class="js jshort">${esc(j.slice(0, 160))}…</span><span class="js jlong">${esc(j)}</span> <span class="jmore" title="click to expand / fold">${num(j.length)} chars</span></span>`;
+  }
+  if (v === null || typeof v !== 'object') return `<span class="jp">${esc(JSON.stringify(v))}</span>`;
+  const arr = Array.isArray(v), ks = arr ? v.map((_, i) => i) : Object.keys(v), [o, c] = arr ? '[]' : '{}', in2 = ind + '  ';
+  if (!ks.length) return `<span class="jx">${o}${c}</span>`;
+  const rows = ks.map((k, n) => `<span class="jr${top && NOISE.has(k) ? ' noise' : top && CHAIN.has(k) ? ' key' : ''}">${in2}${arr ? ''
+    : `<span class="jk">${esc(JSON.stringify(k))}</span><span class="jx">: </span>`}${rawHtml(v[k], in2, ids, false)}${n < ks.length - 1 ? '<span class="jx">,</span>' : ''}</span>`);
+  return `<span class="jx">${o}</span>\n${rows.join('\n')}\n${ind}<span class="jx">${c}</span>`;
+}
+function rawText(r) {  // fetched once per record, then cached as HTML
+  if (!S.raws.has(r.i)) {
+    const path = S.path;
+    S.raws.set(r.i, null);
+    api('/api/raw?path=' + enc(path) + '&i=' + r.i)
+      .then(v => rawHtml(v, '', {pre: r.i + ':', n: 0}, true), e => '[could not load raw record: ' + esc(e.message || e.status) + ']')
+      .then(h => { if (S.path === path) { S.raws.set(r.i, h); schedule(); } });
+  }
+  return `<pre class="full raw">${S.raws.get(r.i) ?? 'Loading...'}</pre>`;
+}
+const reopen = el => { for (const f of el.querySelectorAll('.jfold')) if (S.jopen.has(f.dataset.k)) f.classList.add('open'); };
+document.addEventListener('click', e => {
+  const m = e.target.closest && e.target.closest('.jmore');
+  if (!m) return;
+  const f = m.closest('.jfold'), on = f.classList.toggle('open');
+  S.jopen[on ? 'add' : 'delete'](f.dataset.k);
+});
+
 function fullText(r) {
   if (!S.open.has(r.i)) return '';
+  if (S.raw) return rawText(r);
   const t = S.texts.get(r.i);
   let h = t == null ? 'Loading...' : esc(t);
   if (t != null && S.mark) for (const q of S.mark.split('||').map(esc)) if (q) h = h.replace(q, `<mark>${q}</mark>`);
@@ -765,7 +869,7 @@ function renderDisk() {
       <div class="dl"><span class="ix">${r.i + 1}</span><span class="k">${esc(kindLabel(r))}</span><span class="tag">${tag}</span></div>${pv(r)}${fullText(r)}</div>`);
   }
   const el = $('#disk');
-  el.innerHTML = out.join('');
+  el.innerHTML = out.join(''); reopen(el);
   $('#dcount').textContent = `${num(p + 1)} records`;
   reveal(el, el.querySelector('.sel') || el.querySelector('.cur'));
 }
@@ -779,16 +883,84 @@ function renderWin() {
     const c = CC[r.cat] || CC.messages;
     const kept = w.boundary && r._p < w.boundary._p ? ' <span class="tag">kept verbatim</span>' : '';
     out.push(`<div class="row${S.sel && S.sel.p === r._p ? ' sel' : ''}" data-p="${r._p}" style="--c:${c}">
-      <div class="rl"><span class="k">${esc(kindLabel(r))}${kept}</span><span class="tag" title="line in the file">L${r.i + 1}</span><span class="tk">+${fmt(r.tok)}</span><span class="mini"><i style="width:${Math.max(2, (r.tok || 0) / max * 100)}%;background:${c}"></i></span></div>${pv(r)}${fullText(r)}</div>`);
+      <div class="rl"><span class="k">${esc(kindLabel(r))}${kept}</span><span class="tag" title="line in the file">L${r.i + 1}</span><span class="tk">+${fmt(r.tok * rate())}</span><span class="mini"><i style="width:${Math.max(2, (r.tok || 0) / max * 100)}%;background:${c}"></i></span></div>${pv(r)}${fullText(r)}</div>`);
   }
   if (!w.rows.length) out.push('<div class="empty">Nothing in the window yet at this point.</div>');
   const el = $('#win');
-  el.innerHTML = out.join('');
-  $('#wcount').textContent = `${num(w.rows.length)} records · ~${fmt(w.est)} itemised`;
+  el.innerHTML = out.join(''); reopen(el); delete el.dataset.n;
+  $('#wcount').textContent = `${num(w.rows.length)} records · ~${fmt(w.est * rate())} itemised`;
   const sel = el.querySelector('.sel');
   if (sel) reveal(el, sel); else el.scrollTop = el.scrollHeight;
   const m = sel && sel.querySelector('mark');
   if (m) { const pre = m.closest('pre'); pre.scrollTop += m.getBoundingClientRect().top - pre.getBoundingClientRect().top - 40; }
+}
+
+// ---------- as sent (request copies in the file) ----------
+function loadReqs() {  // once per load and after each live poll that adds records; no endpoint or old file: []
+  const gen = S.gen;
+  api('/api/requests?path=' + enc(S.path)).catch(() => []).then(l => {
+    if (gen !== S.gen) return;
+    S.rq = Array.isArray(l) ? l : [];
+    for (const [n, d] of S.rqd) if (d && d.total == null) S.rqd.delete(n);  // no response yet or failed: fetch again
+    schedule();
+  });
+}
+let rqT = 0;
+function getReq(n) {  // /api/request, debounced while scrubbing, cached by n
+  clearTimeout(rqT);
+  if (S.rqd.has(n)) return S.rqd.get(n);
+  const gen = S.gen, path = S.path;
+  rqT = setTimeout(() => {
+    S.rqd.set(n, null);
+    api('/api/request?path=' + enc(path) + '&n=' + n).catch(e => ({err: e.message || e.status}))
+      .then(d => { if (gen === S.gen) { S.rqd.set(n, d); schedule(); } });
+  }, 150);
+  return null;
+}
+function blockText(n, ref, src) {
+  if (S.raw && src != null) return rawText({i: src});
+  const k = n + '|' + ref, path = S.path;
+  if (!S.btext.has(k)) {
+    S.btext.set(k, null);
+    api('/api/block?path=' + enc(path) + '&n=' + n + '&ref=' + enc(ref)).then(d => d.text, e => '[could not load block: ' + (e.message || e.status) + ']')
+      .then(t => { if (S.path === path) { S.btext.set(k, t); schedule(); } });
+  }
+  const t = S.btext.get(k);
+  return `<pre class="full">${t == null ? 'Loading...' : esc(t)}</pre>`;
+}
+function renderSent() {
+  const el = $('#win'), a = reqAt(S.p);
+  if (!a) {
+    el.innerHTML = `<div class="empty">${S.rq.length ? 'No request copy for this position.' : 'This file has no request copies (Claude Code writes them from v2.1.325). Press A for In the window.'}</div>`;
+    $('#wcount').textContent = ''; delete el.dataset.n;
+    return;
+  }
+  const {r, next} = a, d = getReq(r.n);
+  const out = [`<div class="sh">Request ${r.n + 1} of ${S.rq.length} · line ${r.i + 1} · ${num(r.msgs)} messages · <b>${next ? 'next request' : 'last request sent'}</b></div>`];
+  $('#wcount').textContent = r.total != null ? `${num(r.total)} tokens (API)` : 'no response yet';
+  if (!d || d.err) out.push(`<div class="empty">${d ? 'Could not load the request: ' + esc(d.err) : 'Loading...'}</div>`);
+  else {
+    const tools = d.tools || [], tch = tools.reduce((x, t) => x + t.chars, 0), op = ref => S.bopen.has(r.n + '|' + ref);
+    const max = Math.max(1, tch, ...(d.system || []).map(b => b.chars), ...(d.messages || []).flatMap(m => (m.blocks || []).map(b => b.chars)));
+    const row = (b, src, nw) => {
+      const c = CC[b.cat] || CC.messages, sp = b.split || [], spT = sp.reduce((x, s) => x + s[1], 0) || 1;
+      const bar = sp.length > 1 ? sp.map(([k, ch]) => `<i style="width:${ch / spT * 100}%;background:${CC[k] || CC.messages}" title="${esc(CL[k] || k)}: ${num(ch)} chars"></i>`).join('')
+        : `<i style="width:${Math.max(2, b.chars / max * 100)}%;background:${c}"></i>`;
+      return `<div class="row" data-ref="${esc(b.ref)}" style="--c:${c}"><div class="rl"><span class="k" title="${esc(CL[b.cat] || b.cat)}">${esc(b.type)} <span class="off">${esc(b.head || '')}</span></span>` +
+        `<span class="tag">${b.cache ? `<span class="cb">&#9650; ${esc(b.cache)}</span>` : ''}${nw ? ' <span class="nw">new</span>' : ''}</span><span class="tk">${num(b.chars)} chars</span>` +
+        `<span class="mini${sp.length > 1 ? ' split' : ''}">${bar}</span></div>${op(b.ref) ? blockText(r.n, b.ref, src) : ''}</div>`;
+    };
+    out.push('<div class="grp">SYSTEM</div>', ...(d.system || []).map(b => row(b, b.src, false)), '<div class="grp">TOOLS</div>',
+      `<div class="row" data-ref="tools" style="--c:${CC.tools}"><div class="rl"><span class="k">${num(tools.length)} tools</span><span class="tag"></span><span class="tk">${num(tch)} chars</span>` +
+      `<span class="mini"><i style="width:${Math.max(2, tch / max * 100)}%;background:${CC.tools}"></i></span></div>${op('tools') ? `<div class="full">${dl(tools.map(t => [t.name, num(t.chars) + ' chars']))}</div>` : ''}</div>`);
+    for (const m of d.messages || []) {
+      out.push(`<div class="grp">#${m.idx} ${esc(m.role)}${m.from === 'missing' ? ' · missing' : ''}</div>`);
+      for (const b of m.blocks || []) out.push(row(b, b.src ?? m.src, m.new));
+    }
+  }
+  const keep = el.dataset.n === String(r.n) ? el.scrollTop : 0;
+  el.innerHTML = out.join(''); reopen(el);
+  el.scrollTop = keep; el.dataset.n = r.n;
 }
 
 async function toggleRow(p) {
@@ -808,8 +980,9 @@ async function toggleRow(p) {
 }
 for (const id of ['#disk', '#win']) $(id).addEventListener('click', e => {
   if (e.target.closest('.full')) return;
-  const row = e.target.closest('.row');
-  if (row) toggleRow(+row.dataset.p);
+  const row = e.target.closest('.row'), a = row && row.dataset.ref && reqAt(S.p);
+  if (a) { const k = a.r.n + '|' + row.dataset.ref; S.bopen.has(k) ? S.bopen.delete(k) : S.bopen.add(k); return schedule(); }
+  if (row && row.dataset.p) toggleRow(+row.dataset.p);
 });
 
 // ---------- tabs ----------
@@ -817,7 +990,7 @@ function setTab(t) {
   S.tab = t;
   document.querySelectorAll('.seg button').forEach(b => b.setAttribute('aria-selected', b.dataset.tab === t));
   $('#vwin').hidden = t !== 'window'; $('#vcache').hidden = t !== 'cache';
-  $('#tBook').hidden = $('#tText').hidden = t !== 'window';
+  $('#tBook').hidden = $('#tText').hidden = $('#tRaw').hidden = $('#tSent').hidden = t !== 'window';
   renderMarks(); render();
 }
 document.querySelectorAll('.seg button').forEach(b => b.onclick = () => setTab(b.dataset.tab));
@@ -842,7 +1015,7 @@ function card({title, l1, l2, n, api, extra = '', act = '', take, details = ''})
     (take ? `<div class="take"><b>Takeaway</b><p>${esc(take)}</p></div>` : '') +
     (details ? `<details class="det"${S.details ? ' open' : ''}><summary>Details <span class="note">(D)</span></summary>${details}</details>` : '');
 }
-const plus = t => '+' + fmt(t);
+const plus = t => '+' + fmt(t * rate());
 const firstReq = () => S.reqs.length ? total(S.recs[S.reqs[0]].usage) : null;
 let cardSeq = 0;
 async function renderCard() {
@@ -852,9 +1025,10 @@ async function renderCard() {
     const s = catSums(S.p), w = windowAt(S.p);
     html = card({title: 'Book and page', l1: `Book: ${num(S.p + 1)} records on disk.`, l2: `Page: ${num(w.rows.length)} records go into the next request.`,
       n: '~' + fmt(s._total ?? s._est), api: s._total != null, take: BOOK_NOTE,
-      details: dl([['On disk', `${num(S.p + 1)} records`], ['In window', `${num(w.rows.length)} records, ~${fmt(w.est)} est`],
-        ['System prompt + tools', `~${fmt(s.gap)} (gap on the first request)`],
-        ['Unattributed', `~${fmt(s.under)} (usage minus estimate minus the above${s._total != null ? '' : ', last request'}). Likely: code and JSON tokenize denser than 4 chars, images, thinking stored empty, tool schemas loaded mid-session. Not measured.`]]) +
+      details: dl([['On disk', `${num(S.p + 1)} records`], ['In window', `${num(w.rows.length)} records, ~${fmt(w.est * rate())} est`],
+        s._req ? ['System prompt + tools', `${fmt((s.system || 0) + (s.tools || 0) + (s.tool_additions || 0))} (request ${s._req.n + 1}, apportioned by size)`]
+          : ['System prompt + tools', `~${fmt(s.gap)} (gap on the first request)`],
+        !s._req && ['Unattributed', `~${fmt(s.under)} (usage minus estimate minus the above${s._total != null ? '' : ', last request'}). Likely: code and JSON tokenize denser than 4 chars, images, thinking stored empty, tool schemas loaded mid-session. Not measured.`]]) +
         '<p class="note">Pick a chapter, press PageDown, or click a marker or row to explain it.</p>'});
   } else {
     const slow = setTimeout(() => { if (seq === cardSeq) el.innerHTML = '<p class="note">Loading…</p>'; }, 150);
@@ -881,7 +1055,7 @@ async function cardFor(sel) {
     case 'instructions': case 'skill_listing': {
       const atLaunch = p < (S.reqs[0] ?? Infinity);  // before the first request; -p sessions write the prompt before the launch attachments
       const reload = S.markers.some(m => m.tag === 'compact' && m.p < p), update = tag === 'skill_listing' && r.initial === false;
-      const d = dl([['This record', `~${fmt(r.tok)} tokens est`], ['Next request', nu ? `${fmt(total(nu))} tokens (API usage)` : '-'], rec]);
+      const d = dl([['This record', `~${fmt(r.tok * rate())} tokens est`], ['Next request', nu ? `${fmt(total(nu))} tokens (API usage)` : '-'], rec]);
       let extra = '';
       if (tag === 'skill_listing') {  // "- name: description" or a bare "- name"
         const t = await textFor(r), named = [], desc = [];
@@ -914,10 +1088,10 @@ async function cardFor(sel) {
     case 'persisted': {
       const ps = r.persisted || {};
       return card({title: 'Big output kept on disk', l1: 'Saved to tool-results/; the window gets a ~2 KB preview and the path.',
-        l2: ps.tok != null ? `Sent whole it would be ~${fmt(ps.tok)} tokens, in every request.` : 'Sent whole it would cost its full size, in every request.',
-        n: `${ps.kb != null ? ps.kb.toFixed(1) : '?'} KB → ~${fmt(r.tok)} <small>tokens</small>`, api: false, take: TAKE.persisted,
+        l2: ps.tok != null ? `Sent whole it would be ~${fmt(ps.tok * rate())} tokens, in every request.` : 'Sent whole it would cost its full size, in every request.',
+        n: `${ps.kb != null ? ps.kb.toFixed(1) : '?'} KB → ~${fmt(r.tok * rate())} <small>tokens</small>`, api: false, take: TAKE.persisted,
         act: ps.path ? `<a class="link" target="_blank" rel="noopener" href="/api/file?path=${enc(ps.path)}">Open the full output</a>` : '',
-        details: dl([['Tool', esc(kindLabel(r))], ps.tok != null && ['Sent whole it would be', '~' + fmt(ps.tok) + ' tokens, every turn'], ['File', ps.path ? esc(ps.path) : 'path not recorded'], rec])});
+        details: dl([['Tool', esc(kindLabel(r))], ps.tok != null && ['Sent whole it would be', '~' + fmt(ps.tok * rate()) + ' tokens, every turn'], ['File', ps.path ? esc(ps.path) : 'path not recorded'], rec])});
     }
     case 'subagent': {
       const L = r.agentLink || {}, list = await getSub();
@@ -978,7 +1152,7 @@ async function cardFor(sel) {
       return card({title: 'Skill read directly: ' + (r.skill || ''), l1: 'Not the regular skill loading: SKILL.md was read as a file (Bash/Read), not via the Skill tool.',
         l2: 'The body arrives as a tool result, is not tracked as an invoked skill, and is not re-injected after compaction.',
         n: res ? plus(res.tok) + ' <small>tool result</small>' : null, api: res ? false : null, take: TAKE.skill_read,
-        details: dl([['Skill', esc(r.skill || '-')], rec, res && ['Result', `line ${res.i + 1}, ~${fmt(res.tok)} tokens (whole output, may hold more than SKILL.md)`]])});
+        details: dl([['Skill', esc(r.skill || '-')], rec, res && ['Result', `line ${res.i + 1}, ~${fmt(res.tok * rate())} tokens (whole output, may hold more than SKILL.md)`]])});
     }
     case 'gap5': case 'gap60':
       return tag === 'gap5'
@@ -988,12 +1162,15 @@ async function cardFor(sel) {
           n: nu ? `<small>cache write</small> ${fmt(nu.cw)}` : null, api: nu ? true : null, take: TAKE.gap, details: cache});
     default: {
       const w = windowAt(S.p), why = diskOnlyReason(r, w);
+      if (why === 'request copy') return card({title: kindLabel(r), l1: 'A copy of the request Claude Code sent to the model.',
+        l2: 'Shape = system prompt + tools, written once and reused. Blob = a new message. Request = which messages, in what order, with cache marks.',
+        take: 'Press A to see the request as sent.', details: dl([['Line', r.i + 1], ['Type', esc(r.type)], ['Size', r.bytes + ' bytes']])});
       const WHY = {bookkeeping: 'Bookkeeping for the app (titles, modes, snapshots). Never sent to the model.', system: 'System record: shown to you, never to the model.',
         unrendered: 'Attachment without rendered text: stored, not sent.', 'transcript only': 'Visible in the transcript only, not sent.',
         sidechain: 'Sidechain record (a subagent branch): not in the main window.', 'off the chain': 'Not on the current parentUuid chain: before the last compaction, or on another branch.'};
       return card({title: kindLabel(r), l1: why ? 'On disk only.' : 'In the window.', l2: why ? WHY[why] : 'Sent with the next request.',
         n: why ? null : plus(r.tok), api: why ? null : false, take: BOOK_NOTE,
-        details: dl([['Line', r.i + 1], ['Type', esc(r.type + (r.subtype ? '/' + r.subtype : '') + (r.att ? '/' + r.att : ''))], ['Size', r.bytes + ' bytes'], ['Tokens', `~${fmt(r.tok)} est`]])});
+        details: dl([['Line', r.i + 1], ['Type', esc(r.type + (r.subtype ? '/' + r.subtype : '') + (r.att ? '/' + r.att : ''))], ['Size', r.bytes + ' bytes'], ['Tokens', `~${fmt(r.tok * rate())} est`]])});
     }
   }
 }
@@ -1061,7 +1238,7 @@ async function pollOnce() {
     if (!add.length) return;
     S.recs.push(...add);
     S.sub = null; S.cmp = null;
-    derive(); storyStops();
+    derive(); storyStops(); loadReqs();
     if (S.follow) S.p = last();
     renderSteps(); renderMarks(); render();
   } catch (e) { /* transient: next tick retries */ }
